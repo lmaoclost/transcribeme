@@ -60,12 +60,12 @@ export async function deleteJob(jobId: string, opts?: { purgeMedia?: boolean; pu
   return handleResponse(response);
 }
 
-export async function rerunJob(jobId: string): Promise<any> {
+export async function rerunJob(jobId: string): Promise<{ message: string; job_id: string }> {
   const response = await fetch(`${API_BASE}/jobs/${jobId}/rerun`, { method: "POST" });
   return handleResponse(response);
 }
 
-export async function cancelJob(jobId: string): Promise<any> {
+export async function cancelJob(jobId: string): Promise<{ message: string; job_id: string }> {
   const response = await fetch(`${API_BASE}/jobs/${jobId}/cancel`, { method: "POST" });
   return handleResponse(response);
 }
@@ -81,19 +81,19 @@ export async function fetchTranscriptVersion(jobId: string, version: number): Pr
   return response.text();
 }
 
-export async function deleteTranscriptVersion(jobId: string, version: number): Promise<any> {
+export async function deleteTranscriptVersion(jobId: string, version: number): Promise<{ message: string }> {
   const response = await fetch(`${API_BASE}/jobs/${jobId}/transcript/${version}`, { method: "DELETE" });
   return handleResponse(response);
 }
 
-export async function uploadFile(file: File): Promise<any> {
+export async function uploadFile(file: File): Promise<{ id: string }> {
   const form = new FormData();
   form.append("file", file);
   const response = await fetch(`${API_BASE}/jobs/upload`, { method: "POST", body: form });
   return handleResponse(response);
 }
 
-export async function uploadChunked(file: File, onProgress?: (pct: number) => void): Promise<any> {
+export async function uploadChunked(file: File, onProgress?: (pct: number) => void): Promise<{ id: string }> {
   const initResp = await fetch(`${API_BASE}/uploads/init?filename=${encodeURIComponent(file.name)}&total_size=${file.size}`, { method: "POST" });
   const { upload_id } = await handleResponse<{ upload_id: string }>(initResp);
   const chunkSize = 5 * 1024 * 1024;
