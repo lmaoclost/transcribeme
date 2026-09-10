@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -54,8 +54,6 @@ def _base_ydl_params() -> Dict[str, Any]:
         "logger": DownloadProcessorLogger(),
         "format": "best",
         "noplaylist": True,
-        "js_runtimes": {"deno": {"path": "/usr/local/deno/bin/deno"}},
-        "remote_components": ["ejs:github"],
         "extractor_retries": 3,
         "fragment_retries": 3,
         "retries": 3,
@@ -74,8 +72,6 @@ def _base_ydl_params() -> Dict[str, Any]:
         "ignoreerrors": False,
         "no_warnings": False,
     }
-    if settings.ytdlp_cookies_file:
-        params["cookiefile"] = settings.ytdlp_cookies_file
     return params
 
 
@@ -225,7 +221,7 @@ def download_video(self, job_id: str, url: str, output_dir: str) -> None:
                     overall = min(50.0, pct * 0.5)
                     if overall - last_progress >= 1.0:
                         job.progress = overall
-                        job.updated_at = datetime.utcnow()
+                        job.updated_at = datetime.now(timezone.utc)
                         session.add(job)
                         session.commit()
                         last_progress = overall

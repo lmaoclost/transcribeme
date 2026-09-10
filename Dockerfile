@@ -6,12 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
     ca-certificates \
-    unzip \
     && rm -rf /var/lib/apt/lists/*
-
-ENV DENO_INSTALL=/usr/local/deno
-RUN curl -fsSL https://deno.land/install.sh | sh
-ENV PATH="${DENO_INSTALL}/bin:${PATH}"
 
 RUN pip install --no-cache-dir uv
 

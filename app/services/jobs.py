@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select
@@ -81,7 +81,7 @@ def update_job_status(
     transcript_path: Optional[str] = None,
 ) -> Job:
     job.status = status
-    job.updated_at = datetime.utcnow()
+    job.updated_at = datetime.now(timezone.utc)
     if progress is not None:
         job.progress = progress
     if error is not None:
@@ -91,9 +91,9 @@ def update_job_status(
     if transcript_path is not None:
         job.transcript_path = transcript_path
     if status in {JobStatus.downloading, JobStatus.transcribing} and job.started_at is None:
-        job.started_at = datetime.utcnow()
+        job.started_at = datetime.now(timezone.utc)
     if status in {JobStatus.completed, JobStatus.failed, JobStatus.canceled}:
-        job.finished_at = datetime.utcnow()
+        job.finished_at = datetime.now(timezone.utc)
     session.add(job)
     return job
 
@@ -103,7 +103,7 @@ def set_batch_status(session: Session, batch_id: str, status: BatchStatus) -> No
     if not batch:
         return
     batch.status = status
-    batch.updated_at = datetime.utcnow()
+    batch.updated_at = datetime.now(timezone.utc)
     session.add(batch)
 
 
@@ -125,5 +125,5 @@ def update_batch_status(session: Session, batch_id: str) -> None:
         batch.status = BatchStatus.completed
     else:
         batch.status = BatchStatus.processing
-    batch.updated_at = datetime.utcnow()
+    batch.updated_at = datetime.now(timezone.utc)
     session.add(batch)

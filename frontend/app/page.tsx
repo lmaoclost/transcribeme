@@ -11,7 +11,6 @@ import {
   deleteJob,
   fetchJobEvents,
   fetchJobs,
-  fetchSettings,
   fetchTranscript,
   fetchTranscripts,
   deleteTranscriptVersion,
@@ -48,7 +47,6 @@ function formatOptionLabel(o: DownloadFormatOption){ const parts=[o.format_id,o.
 
 export default function HomePage(){
   const { data, error, isLoading, mutate } = useSWR("jobs", fetchJobs, { refreshInterval: REFRESH_INTERVAL });
-  const { data: settings } = useSWR("settings", fetchSettings);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [url, setUrl] = useState("");
   const [previewedUrl, setPreviewedUrl] = useState<string | null>(null);
@@ -69,7 +67,6 @@ export default function HomePage(){
   const { data: transcript, error: transcriptError, isLoading: transcriptLoading } = useSWR(selectedJob?.transcript_path?["transcript",selectedJob.id]:null, ()=>fetchTranscript(selectedJob!.id), { refreshInterval: selectedJob?.status==="completed"?0:REFRESH_INTERVAL });
   useEffect(()=>{ if(previewedUrl && previewedUrl!==url){ setPreviewedUrl(null); setFormatOptions([]); setSelectedFormatId("best"); setPreviewMeta(null); setPreviewState({status:"idle"});} },[previewedUrl,url]);
   const stats = useMemo(()=>{ const total=jobs.length; const active=jobs.filter(j=>["downloading","transcribing"].includes(j.status)).length; const completed=jobs.filter(j=>j.status==="completed").length; const failed=jobs.filter(j=>j.status==="failed").length; return {total,active,completed,failed}; },[jobs]);
-  const cookiesStatus = settings?.cookies_configured?"Enabled":settings?.cookies_path?"Missing file":"Not configured";
   const mediaUrl = selectedJob?.download_path?getMediaUrl(selectedJob.id):null;
   const transcriptUrl = selectedJob?.transcript_path?getTranscriptUrl(selectedJob.id):null;
   const showAudioPlayer = isAudioFile(selectedJob?.download_path);
@@ -111,9 +108,9 @@ export default function HomePage(){
         <div className="sidebar__section">
           <span className="sidebar__label">System</span>
           <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
-            <span className={`status-chip ${settings?.cookies_configured?"enabled":"disabled"}`}>Cookies {cookiesStatus}</span>
             <span className="status-chip">small cpu int8</span>
             <span className="status-chip">NLLB 600M</span>
+            <span className="status-chip">1.5×</span>
           </div>
         </div>
       </aside>

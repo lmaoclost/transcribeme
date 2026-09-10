@@ -9,7 +9,8 @@ interface JobCardProps {
 }
 
 function formatElapsed(ms: number): string {
-  const s = Math.floor(ms / 1000);
+  const clamped = Math.max(0, ms);
+  const s = Math.floor(clamped / 1000);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
@@ -29,11 +30,17 @@ function formatSubtitle(job: Job) {
   return job.source_url;
 }
 
+function parseISO(s: string | null): number | null {
+  if (!s) return null;
+  const t = new Date(s.endsWith("Z") || s.includes("+") ? s : s + "Z").getTime();
+  return isNaN(t) ? null : t;
+}
+
 export function JobCard({ job, isActive, onSelect, onRemove }: JobCardProps) {
   const canRemove = Boolean(onRemove && ["completed","failed","canceled","queued"].includes(job.status));
   const [now, setNow] = useState<number>(Date.now());
   const isProcessing = ["downloading","transcribing"].includes(job.status);
-  const startedAt = job.started_at ? new Date(job.started_at).getTime() : null;
+  const startedAt = parseISO(job.started_at);
   useEffect(() => {
     if (!isProcessing || !startedAt) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -42,9 +49,11 @@ export function JobCard({ job, isActive, onSelect, onRemove }: JobCardProps) {
   const elapsedMs = (() => {
     if (!startedAt) return null;
     if (["completed","failed","canceled"].includes(job.status) && job.finished_at) {
-      return new Date(job.finished_at).getTime() - startedAt;
+      const fin = parseISO(job.finished_at);
+      if (fin === null) return null;
+      return Math.max(0, fin - startedAt);
     }
-    if (isProcessing) return now - startedAt;
+    if (isProcessing) return Math.max(0, now - startedAt);
     return null;
   })();
 
@@ -64,7 +73,7 @@ export function JobCard({ job, isActive, onSelect, onRemove }: JobCardProps) {
       <div className="job-card__header">
         <span className={`status-pill status-${job.status}`}>{job.status}</span>
         <div className="job-card__actions">
-          <span className="job-meta">{new Date(job.created_at).toLocaleString()}</span>
+          <span className="job-meta">{(() => { const t = parseISO(job.created_at); return t ? new Date(t).toLocaleString() : new Date(job.created_at).toLocaleString(); })()}</span>
           {canRemove && (
             <button
               type="button"

@@ -1,6 +1,6 @@
 """Cleanup old jobs after 7 days."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from celery.utils.log import get_task_logger
@@ -16,7 +16,7 @@ settings = get_settings()
 
 @celery_app.task(name="app.tasks.cleanup.cleanup_old_jobs")
 def cleanup_old_jobs() -> dict:
-    cutoff = datetime.utcnow() - timedelta(days=settings.cleanup_days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.cleanup_days)
     count = 0
     with db.SessionLocal() as session:
         old_jobs = session.scalars(select(Job).where(Job.finished_at != None, Job.finished_at < cutoff)).all()

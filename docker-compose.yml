@@ -8,7 +8,6 @@ services:
       - ${HOST_DATA_DIR:-./data}:/app/data
       - ${HOST_DOWNLOADS_DIR:-./downloads}:/app/downloads
       - ${HOST_MODELS_DIR:-./models}:/app/models
-      - ${HOST_CONFIG_DIR:-./config}:/app/config
     depends_on:
       - redis
     environment:
@@ -21,7 +20,6 @@ services:
       - QTUBE_TRANSCRIPTION_COMPUTE_TYPE=int8
       - QTUBE_CLEANUP_DAYS=${QTUBE_CLEANUP_DAYS:-7}
       - QTUBE_TRANSLATION_MODEL=${QTUBE_TRANSLATION_MODEL:-facebook/nllb-200-distilled-600M}
-      - QTUBE_YTDLP_COOKIES_FILE=/app/config/yt-cookies.txt
       - QTUBE_TRANSCRIPTION_SPEED=${QTUBE_TRANSCRIPTION_SPEED:-1.5}
     restart: unless-stopped
   redis:
@@ -43,14 +41,12 @@ services:
       - QTUBE_TRANSCRIPTION_DEVICE=cpu
       - QTUBE_TRANSCRIPTION_COMPUTE_TYPE=int8
       - QTUBE_TRANSLATION_MODEL=${QTUBE_TRANSLATION_MODEL:-facebook/nllb-200-distilled-600M}
-      - QTUBE_YTDLP_COOKIES_FILE=/app/config/yt-cookies.txt
       - QTUBE_TRANSCRIPTION_SPEED=${QTUBE_TRANSCRIPTION_SPEED:-1.5}
     volumes:
       - .:/app
       - ${HOST_DOWNLOADS_DIR:-./downloads}:/app/downloads
       - ${HOST_MODELS_DIR:-./models}:/app/models
       - ${HOST_DATA_DIR:-./data}:/app/data
-      - ${HOST_CONFIG_DIR:-./config}:/app/config
     depends_on:
       - redis
     restart: unless-stopped
@@ -61,12 +57,10 @@ services:
       - PYTHONPATH=/app
       - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
       - QTUBE_DOWNLOADS_DIR=/app/downloads
-      - QTUBE_YTDLP_COOKIES_FILE=/app/config/yt-cookies.txt
     volumes:
       - .:/app
       - ${HOST_DOWNLOADS_DIR:-./downloads}:/app/downloads
       - ${HOST_DATA_DIR:-./data}:/app/data
-      - ${HOST_CONFIG_DIR:-./config}:/app/config
     depends_on:
       - redis
     restart: unless-stopped
