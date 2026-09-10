@@ -60,8 +60,15 @@ export default function HomePage(){
   const [showVersions, setShowVersions] = useState(false);
   const [versions, setVersions] = useState<TranscriptVersion[]>([]);
   const [deleteOpts, setDeleteOpts] = useState({ purgeMedia:false, purgeTranscript:false });
+  const [filter, setFilter] = useState<"all"|"processing"|"done"|"failed">("all");
 
   const jobs = useMemo(()=>data?.jobs??[],[data]);
+  const filteredJobs = useMemo(()=>{
+    if(filter==="all") return jobs;
+    if(filter==="done") return jobs.filter(j=>j.status==="completed");
+    if(filter==="failed") return jobs.filter(j=>j.status==="failed");
+    return jobs.filter(j=>["queued","downloading","downloaded","transcribing"].includes(j.status));
+  },[jobs, filter]);
   const selectedJob = jobs.find(j=>j.id===selectedJobId) ?? jobs[0];
   const { data: events } = useSWR(selectedJob?.id?["events",selectedJob.id]:null, ()=>fetchJobEvents(selectedJob!.id), { refreshInterval: REFRESH_INTERVAL });
   const { data: transcript, error: transcriptError, isLoading: transcriptLoading } = useSWR(selectedJob?.transcript_path?["transcript",selectedJob.id]:null, ()=>fetchTranscript(selectedJob!.id), { refreshInterval: selectedJob?.status==="completed"?0:REFRESH_INTERVAL });
@@ -144,11 +151,22 @@ export default function HomePage(){
 
         <div className="grid">
           <section className="panel">
-            <div className="panel-header"><h2>Queue</h2><span className="panel-meta">{isLoading?"Loading…":`${jobs.length} total`}</span></div>
+            <div className="panel-header">
+              <h2>Queue</h2>
+              <span className="panel-meta">{isLoading?"Loading…":`${filteredJobs.length}/${jobs.length}`}</span>
+            </div>
+            <div role="tablist" style={{display:"flex", gap:6, marginBottom:12, flexWrap:"wrap"}}>
+              {(["all","processing","done","failed"] as const).map(f=>{
+                const labels={all:`All (${jobs.length})`, processing:`Processing (${jobs.filter(j=>["queued","downloading","downloaded","transcribing"].includes(j.status)).length})`, done:`Done (${jobs.filter(j=>j.status==="completed").length})`, failed:`Failed (${jobs.filter(j=>j.status==="failed").length})`} as const;
+                const active = filter===f;
+                return <button key={f} role="tab" aria-selected={active} onClick={()=>setFilter(f)} className={`button ${active?"":"secondary"}`} style={{padding:"6px 10px", fontSize:11, borderRadius:999, background: active?"var(--accent)":undefined, color: active?"white":undefined}}>{labels[f]}</button>;
+              })}
+            </div>
             {error && <p className="panel-empty" style={{color:"#e88a7a"}}>Failed to load queue</p>}
             {!isLoading && !jobs.length && <div className="panel-empty"><b>No jobs yet</b><br/>Add YouTube / mp4 link or drop file</div>}
+            {!isLoading && jobs.length>0 && filteredJobs.length===0 && <div className="panel-empty">No {filter} jobs</div>}
             <div className="job-list">
-              {jobs.map(job=> <JobCard key={job.id} job={job} isActive={selectedJob?.id===job.id} onSelect={setSelectedJobId} onRemove={handleRemove} />)}
+              {filteredJobs.map(job=> <JobCard key={job.id} job={job} isActive={selectedJob?.id===job.id} onSelect={setSelectedJobId} onRemove={handleRemove} />)}
             </div>
           </section>
 
