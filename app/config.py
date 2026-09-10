@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     translation_device: str = "cpu"
     translation_target_lang_code: str = "por_Latn"
     transcription_speed: float = 1.5
+    youtube_prefer_captions: bool = True
+    youtube_sub_langs: str = "pt,pt-BR,pt-PT,en,es,fr,de,ja"
 
     model_config = SettingsConfigDict(
         env_prefix="QTUBE_",

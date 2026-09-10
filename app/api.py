@@ -158,8 +158,11 @@ def create_app() -> FastAPI:
     @app.post("/jobs", response_model=BatchCreateResponse, status_code=202)
     def create_jobs(request: JobCreateRequest, session: Session = Depends(get_session)) -> BatchCreateResponse:
         batch = create_batch(session, request.url)
+        # optimistic Job so queue shows instantly, even while another job is processing
+        job = create_job(session, source_url=request.url, batch_id=batch.id, video_url=request.url, title=request.url, uploader="YouTube", input_type="url", requested_format=request.format_id)
+        add_job_event(session, job.id, "queued", "Queued for processing", 0.0)
         session.commit()
-        enqueue_url.delay(batch.id, request.url, request.format_id)
+        enqueue_url.delay(batch.id, request.url, request.format_id, job.id)
         return BatchCreateResponse(batch_id=batch.id, message="Queued for processing")
 
     @app.post("/jobs/upload", response_model=JobResponse, status_code=202)
