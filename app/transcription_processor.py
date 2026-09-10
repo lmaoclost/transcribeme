@@ -17,6 +17,7 @@ from app.services.jobs import add_job_event, create_job, update_batch_status, up
 from app.whisper_transcriber import WhisperTranscriber
 from app.models import TranscriptVersion
 from app.audio_tools import split_audio_for_transcription
+from app.services.translation import translate as translate_to_pt_br, needs_translation
 
 logger = get_task_logger(__name__)
 settings = get_settings()
@@ -43,31 +44,44 @@ def transcribe_video(self, job_id: str) -> None:
             return
 
         update_job_status(session, job, JobStatus.transcribing, progress=60.0)
-        add_job_event(session, job.id, "transcribing", "Translation to pt-BR started", 60.0)
+        add_job_event(session, job.id, "transcribing", "Transcription started (whisper small)", 60.0)
         session.commit()
 
         try:
             audio_path = Path(job.download_path)
-            # Split if needed for unlimited length
+            # Transcribe (auto-detect lang), then translate to pt-BR if needed via NLLB
+            def _do_transcribe(p: Path) -> tuple[str, str | None]:
+                txt, lng = self.transcriber.transcribe_audio(p)
+                return txt, lng
+
             if WhisperTranscriber.needs_splitting(audio_path, settings.splitter_threshold_minutes):
                 chunks = split_audio_for_transcription(audio_path, settings.splitter_chunk_minutes)
-                texts = []
+                raw_texts = []
                 detected_lang = None
                 for chunk in chunks:
-                    t, lang = self.transcriber.translate_to_pt(chunk)
-                    texts.append(t)
+                    t, lang = _do_transcribe(chunk)
+                    raw_texts.append(t)
                     if lang and not detected_lang:
                         detected_lang = lang
-                    # cleanup tmp chunks
                     if chunk != audio_path and chunk.exists():
                         try:
                             chunk.unlink()
                         except Exception:
                             pass
-                transcription = "\n".join(texts)
+                raw_transcription = "\n".join(raw_texts)
                 lang = detected_lang
             else:
-                transcription, lang = self.transcriber.translate_to_pt(audio_path)
+                raw_transcription, lang = _do_transcribe(audio_path)
+
+            # Translate to pt-BR if needed
+            if needs_translation(lang):
+                logger.info("Translating %s -> pt-BR via NLLB", lang)
+                add_job_event(session, job.id, "translating", f"Translating {lang} -> pt-BR", 85.0)
+                session.commit()
+                transcription = translate_to_pt_br(raw_transcription, lang)
+            else:
+                transcription = raw_transcription
+                logger.info("Source is pt (%s), skipping translation", lang)
 
             # Versioning: keep old
             existing_count = session.scalar(
@@ -95,7 +109,7 @@ def transcribe_video(self, job_id: str) -> None:
             if lang:
                 job.source_lang = lang
                 session.add(job)
-            add_job_event(session, job.id, "completed", f"Translation completed v{version} lang={lang}", 100.0)
+            add_job_event(session, job.id, "completed", f"Transcription+translation completed v{version} lang={lang}->pt-BR", 100.0)
             session.commit()
             if job.batch_id:
                 update_batch_status(session, job.batch_id)

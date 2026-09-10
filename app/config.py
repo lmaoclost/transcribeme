@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     transcription_target_lang: str = "pt"
     splitter_threshold_minutes: int = 30
     splitter_chunk_minutes: int = 20
+    # NLLB translation
+    translation_model: str = "facebook/nllb-200-distilled-600M"
+    translation_device: str = "cpu"
+    translation_target_lang_code: str = "por_Latn"
 
     model_config = SettingsConfigDict(
         env_prefix="QTUBE_",

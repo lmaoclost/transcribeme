@@ -28,26 +28,16 @@ class WhisperTranscriber:
         )
         print(f"Model loaded successfully on {self.device}")
 
-    def transcribe_audio(self, audio_file: Path) -> str:
-        """Transcribe audio from a file."""
+    def transcribe_audio(self, audio_file: Path) -> tuple[str, str | None]:
+        """Transcribe audio, auto-detect language. Returns (text, lang)."""
         start_time = time.time()
-        segments, _info = self.model.transcribe(str(audio_file))
+        segments, info = self.model.transcribe(str(audio_file), language=None)
+        lang = getattr(info, "language", None) if info else None
+        prob = getattr(info, "language_probability", None) if info else None
         transcription_text = "".join(segment.text for segment in segments).strip()
         elapsed_time = time.time() - start_time
-        print(f"Transcription completed in {elapsed_time:.2f} seconds")
-        return transcription_text
-
-    def translate_to_pt(self, audio_file: Path) -> tuple[str, str | None]:
-        """Translate audio to pt-BR. Returns (text, detected_lang)."""
-        start_time = time.time()
-        segments, info = self.model.transcribe(
-            str(audio_file), task="translate", language=None
-        )
-        lang = getattr(info, "language", None) if info else None
-        text = "".join(segment.text for segment in segments).strip()
-        elapsed = time.time() - start_time
-        print(f"Translation to pt-BR completed in {elapsed:.2f}s lang={lang}")
-        return text, lang
+        print(f"Transcription completed in {elapsed_time:.2f}s lang={lang} prob={prob}")
+        return transcription_text, lang
 
     @staticmethod
     def needs_splitting(audio_file: Path, threshold_minutes: int = 30) -> bool:

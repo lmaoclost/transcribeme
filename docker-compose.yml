@@ -19,6 +19,7 @@ services:
       - QTUBE_TRANSCRIPTION_DEVICE=cpu
       - QTUBE_TRANSCRIPTION_COMPUTE_TYPE=int8
       - QTUBE_CLEANUP_DAYS=${QTUBE_CLEANUP_DAYS:-7}
+      - QTUBE_TRANSLATION_MODEL=${QTUBE_TRANSLATION_MODEL:-facebook/nllb-200-distilled-600M}
     restart: unless-stopped
   redis:
     image: "redis:7-alpine"
@@ -38,6 +39,7 @@ services:
       - QTUBE_WHISPER_MODEL=${QTUBE_WHISPER_MODEL:-small}
       - QTUBE_TRANSCRIPTION_DEVICE=cpu
       - QTUBE_TRANSCRIPTION_COMPUTE_TYPE=int8
+      - QTUBE_TRANSLATION_MODEL=${QTUBE_TRANSLATION_MODEL:-facebook/nllb-200-distilled-600M}
     volumes:
       - .:/app
       - ${HOST_DOWNLOADS_DIR:-./downloads}:/app/downloads
