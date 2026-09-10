@@ -54,6 +54,8 @@ def _base_ydl_params() -> Dict[str, Any]:
         "logger": DownloadProcessorLogger(),
         "format": "best",
         "noplaylist": True,
+        "js_runtimes": {"deno": {"path": "/usr/local/deno/bin/deno"}},
+        "remote_components": ["ejs:github"],
         "extractor_retries": 3,
         "fragment_retries": 3,
         "retries": 3,
