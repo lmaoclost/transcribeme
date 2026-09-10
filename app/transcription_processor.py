@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 from celery.signals import worker_process_init
@@ -73,11 +74,21 @@ def transcribe_video(self, job_id: str) -> None:
                 chunks = split_audio_for_transcription(transcribe_path, settings.splitter_chunk_minutes)
                 raw_texts = []
                 detected_lang = None
-                for chunk in chunks:
+                total = len(chunks)
+                mid = total // 2 if total > 1 else 0
+                for idx, chunk in enumerate(chunks):
                     t, lang = _do_transcribe(chunk)
                     raw_texts.append(t)
                     if lang and not detected_lang:
                         detected_lang = lang
+                    # fewer: commit only at midpoint
+                    if total > 1 and idx + 1 == mid:
+                        pct = 60 + (mid / total) * 25  # 60->85 midpoint
+                        job.progress = pct
+                        job.updated_at = datetime.utcnow()
+                        session.add(job)
+                        add_job_event(session, job.id, "transcribing", f"Transcribing {idx+1}/{total}", pct)
+                        session.commit()
                     if chunk != transcribe_path and chunk.exists():
                         try:
                             chunk.unlink()

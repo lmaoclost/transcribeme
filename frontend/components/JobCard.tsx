@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { Job } from "@/lib/types";
 
 interface JobCardProps {
@@ -5,6 +6,23 @@ interface JobCardProps {
   isActive: boolean;
   onSelect: (jobId: string) => void;
   onRemove?: (jobId: string) => void;
+}
+
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+  return `${m}:${String(sec).padStart(2,"0")}`;
+}
+function formatETA(elapsedMs: number, progress: number): string | null {
+  if (progress <= 5 || progress >= 99) return null;
+  const frac = progress / 100;
+  const total = elapsedMs / frac;
+  const remaining = total - elapsedMs;
+  if (remaining <= 0 || !isFinite(remaining)) return null;
+  return formatElapsed(remaining);
 }
 
 function formatTitle(job: Job) {
@@ -21,6 +39,23 @@ function formatSubtitle(job: Job) {
 
 export function JobCard({ job, isActive, onSelect, onRemove }: JobCardProps) {
   const canRemove = Boolean(onRemove && ["completed","failed","canceled","queued"].includes(job.status));
+  const [now, setNow] = useState<number>(Date.now());
+  const isProcessing = ["downloading","transcribing"].includes(job.status);
+  const startedAt = job.started_at ? new Date(job.started_at).getTime() : null;
+  useEffect(() => {
+    if (!isProcessing || !startedAt) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isProcessing, startedAt]);
+  const elapsedMs = (() => {
+    if (!startedAt) return null;
+    if (["completed","failed","canceled"].includes(job.status) && job.finished_at) {
+      return new Date(job.finished_at).getTime() - startedAt;
+    }
+    if (isProcessing) return now - startedAt;
+    return null;
+  })();
+  const eta = elapsedMs !== null && isProcessing ? formatETA(elapsedMs, job.progress) : null;
 
   return (
     <div
@@ -59,7 +94,7 @@ export function JobCard({ job, isActive, onSelect, onRemove }: JobCardProps) {
         <div className="job-progress__bar" style={{ width: `${job.progress}%` }} />
       </div>
       <div className="job-progress__meta">
-        <span>{Math.round(job.progress)}%</span>
+        <span>{Math.round(job.progress)}%{elapsedMs !== null ? ` · ⏱ ${formatElapsed(elapsedMs)}${eta ? ` · ETA ~${eta}` : ""}` : ""}</span>
         <span>{job.batch_id ? `Batch ${job.batch_id.slice(0, 8)}` : "Single"}</span>
       </div>
     </div>
