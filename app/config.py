@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     translation_model: str = "facebook/nllb-200-distilled-600M"
     translation_device: str = "cpu"
     translation_target_lang_code: str = "por_Latn"
+    transcription_speed: float = 1.5
 
     model_config = SettingsConfigDict(
         env_prefix="QTUBE_",

@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from app.services.jobs import add_job_event, create_job, update_batch_status, update_job_status
 from app.whisper_transcriber import WhisperTranscriber
 from app.models import TranscriptVersion
-from app.audio_tools import split_audio_for_transcription
+from app.audio_tools import accelerate_audio, split_audio_for_transcription
 from app.services.translation import translate as translate_to_pt_br, needs_translation
 
 logger = get_task_logger(__name__)
@@ -49,13 +49,28 @@ def transcribe_video(self, job_id: str) -> None:
 
         try:
             audio_path = Path(job.download_path)
+            # Global acceleration 1.5x (applies to all lengths) — atempo pitch-preserving
+            factor = float(settings.transcription_speed) if settings.transcription_speed else 1.5
+            if factor not in (1.0, 1.5):
+                factor = 1.5
+            acc_base: Path | None = None
+            if factor != 1.0:
+                logger.info("Accelerating audio %.1fx", factor)
+                add_job_event(session, job.id, "accelerating", f"Accelerating audio {factor}x", 58.0)
+                session.commit()
+                acc_base = accelerate_audio(audio_path, factor)
+                # use accelerated path for transcription (split handles temp)
+                transcribe_path = acc_base
+            else:
+                transcribe_path = audio_path
+
             # Transcribe (auto-detect lang), then translate to pt-BR if needed via NLLB
             def _do_transcribe(p: Path) -> tuple[str, str | None]:
                 txt, lng = self.transcriber.transcribe_audio(p)
                 return txt, lng
 
-            if WhisperTranscriber.needs_splitting(audio_path, settings.splitter_threshold_minutes):
-                chunks = split_audio_for_transcription(audio_path, settings.splitter_chunk_minutes)
+            if WhisperTranscriber.needs_splitting(transcribe_path, settings.splitter_threshold_minutes):
+                chunks = split_audio_for_transcription(transcribe_path, settings.splitter_chunk_minutes)
                 raw_texts = []
                 detected_lang = None
                 for chunk in chunks:
@@ -63,7 +78,7 @@ def transcribe_video(self, job_id: str) -> None:
                     raw_texts.append(t)
                     if lang and not detected_lang:
                         detected_lang = lang
-                    if chunk != audio_path and chunk.exists():
+                    if chunk != transcribe_path and chunk.exists():
                         try:
                             chunk.unlink()
                         except Exception:
@@ -71,7 +86,14 @@ def transcribe_video(self, job_id: str) -> None:
                 raw_transcription = "\n".join(raw_texts)
                 lang = detected_lang
             else:
-                raw_transcription, lang = _do_transcribe(audio_path)
+                raw_transcription, lang = _do_transcribe(transcribe_path)
+
+            # cleanup accelerated temp (if not already cleaned as chunk source)
+            if acc_base is not None and acc_base != audio_path and acc_base.exists():
+                try:
+                    acc_base.unlink()
+                except Exception:
+                    pass
 
             # Translate to pt-BR if needed
             if needs_translation(lang):

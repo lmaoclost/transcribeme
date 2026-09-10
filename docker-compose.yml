@@ -22,6 +22,7 @@ services:
       - QTUBE_CLEANUP_DAYS=${QTUBE_CLEANUP_DAYS:-7}
       - QTUBE_TRANSLATION_MODEL=${QTUBE_TRANSLATION_MODEL:-facebook/nllb-200-distilled-600M}
       - QTUBE_YTDLP_COOKIES_FILE=/app/config/yt-cookies.txt
+      - QTUBE_TRANSCRIPTION_SPEED=${QTUBE_TRANSCRIPTION_SPEED:-1.5}
     restart: unless-stopped
   redis:
     image: "redis:7-alpine"
@@ -43,6 +44,7 @@ services:
       - QTUBE_TRANSCRIPTION_COMPUTE_TYPE=int8
       - QTUBE_TRANSLATION_MODEL=${QTUBE_TRANSLATION_MODEL:-facebook/nllb-200-distilled-600M}
       - QTUBE_YTDLP_COOKIES_FILE=/app/config/yt-cookies.txt
+      - QTUBE_TRANSCRIPTION_SPEED=${QTUBE_TRANSCRIPTION_SPEED:-1.5}
     volumes:
       - .:/app
       - ${HOST_DOWNLOADS_DIR:-./downloads}:/app/downloads

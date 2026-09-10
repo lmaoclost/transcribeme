@@ -46,6 +46,43 @@ def convert_audio_format(
         raise RuntimeError(f"Error converting audio format: {err}") from err
 
 
+def accelerate_audio(input_path: Path, factor: float = 1.5) -> Path:
+    """Accelerate audio with ffmpeg atempo (pitch-preserving). Returns new temp path or original if factor==1.0."""
+    if factor == 1.0 or factor is None:
+        return input_path
+    # clamp to allowed global values 1.0-1.5
+    if not 1.0 <= factor <= 1.5:
+        raise ValueError("transcription_speed must be 1.0 or 1.5")
+    import subprocess
+    import tempfile
+
+    # create temp file in same dir for cleanup tracking
+    tmp = Path(tempfile.mktemp(suffix=input_path.suffix, prefix=f"acc{factor}_"))
+    try:
+        # single atempo for 1.5 (max 2.0, no chain needed); keep 16k mono for whisper
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-nostdin", "-i", str(input_path), "-filter:a", f"atempo={factor}", "-ar", "16000", "-ac", "1", str(tmp)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except Exception:
+                    pass
+            return input_path
+        return tmp
+    except Exception:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except Exception:
+            pass
+        return input_path
+
+
 def split_audio_for_transcription(
     input_path: Path, chunk_minutes: int = 20, overlap_seconds: int = 2
 ) -> list[Path]:
