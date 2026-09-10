@@ -16,14 +16,6 @@ function formatElapsed(ms: number): string {
   if (h > 0) return `${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
   return `${m}:${String(sec).padStart(2,"0")}`;
 }
-function formatETA(elapsedMs: number, progress: number): string | null {
-  if (progress <= 5 || progress >= 99) return null;
-  const frac = progress / 100;
-  const total = elapsedMs / frac;
-  const remaining = total - elapsedMs;
-  if (remaining <= 0 || !isFinite(remaining)) return null;
-  return formatElapsed(remaining);
-}
 
 function formatTitle(job: Job) {
   if (job.title) return job.title;
@@ -55,7 +47,6 @@ export function JobCard({ job, isActive, onSelect, onRemove }: JobCardProps) {
     if (isProcessing) return now - startedAt;
     return null;
   })();
-  const eta = elapsedMs !== null && isProcessing ? formatETA(elapsedMs, job.progress) : null;
 
   return (
     <div
@@ -94,7 +85,7 @@ export function JobCard({ job, isActive, onSelect, onRemove }: JobCardProps) {
         <div className="job-progress__bar" style={{ width: `${job.progress}%` }} />
       </div>
       <div className="job-progress__meta">
-        <span>{Math.round(job.progress)}%{elapsedMs !== null ? ` · ⏱ ${formatElapsed(elapsedMs)}${eta ? ` · ETA ~${eta}` : ""}` : ""}</span>
+        <span>{Math.round(job.progress)}%{elapsedMs !== null ? ` · ⏱ ${formatElapsed(elapsedMs)}` : ""}</span>
         <span>{job.batch_id ? `Batch ${job.batch_id.slice(0, 8)}` : "Single"}</span>
       </div>
     </div>
