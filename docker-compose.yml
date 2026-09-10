@@ -1,0 +1,92 @@
+services:
+  api:
+    build: .
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - .:/app
+      - ${HOST_DATA_DIR:-./data}:/app/data
+      - ${HOST_DOWNLOADS_DIR:-./downloads}:/app/downloads
+      - ${HOST_MODELS_DIR:-./models}:/app/models
+    depends_on:
+      - redis
+    environment:
+      - PYTHONPATH=/app
+      - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
+      - QTUBE_DOWNLOADS_DIR=/app/downloads
+      - QTUBE_MODELS_DIR=/app/models
+      - QTUBE_WHISPER_MODEL=${QTUBE_WHISPER_MODEL:-small}
+      - QTUBE_TRANSCRIPTION_DEVICE=cpu
+      - QTUBE_TRANSCRIPTION_COMPUTE_TYPE=int8
+      - QTUBE_CLEANUP_DAYS=${QTUBE_CLEANUP_DAYS:-7}
+    restart: unless-stopped
+  redis:
+    image: "redis:7-alpine"
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+  celery_transcription:
+    build: .
+    command: celery -A app.celery_app worker --loglevel=info --concurrency 1 -Q transcription_queue
+    environment:
+      - PYTHONPATH=/app
+      - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
+      - QTUBE_DOWNLOADS_DIR=/app/downloads
+      - QTUBE_MODELS_DIR=/app/models
+      - QTUBE_WHISPER_MODEL=${QTUBE_WHISPER_MODEL:-small}
+      - QTUBE_TRANSCRIPTION_DEVICE=cpu
+      - QTUBE_TRANSCRIPTION_COMPUTE_TYPE=int8
+    volumes:
+      - .:/app
+      - ${HOST_DOWNLOADS_DIR:-./downloads}:/app/downloads
+      - ${HOST_MODELS_DIR:-./models}:/app/models
+      - ${HOST_DATA_DIR:-./data}:/app/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+  celery_download:
+    build: .
+    command: celery -A app.celery_app worker --loglevel=info --concurrency 1 -Q download_queue
+    environment:
+      - PYTHONPATH=/app
+      - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
+      - QTUBE_DOWNLOADS_DIR=/app/downloads
+    volumes:
+      - .:/app
+      - ${HOST_DOWNLOADS_DIR:-./downloads}:/app/downloads
+      - ${HOST_DATA_DIR:-./data}:/app/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+  celery_beat:
+    build: .
+    command: celery -A app.celery_app beat --loglevel=info
+    environment:
+      - PYTHONPATH=/app
+      - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
+      - QTUBE_DOWNLOADS_DIR=/app/downloads
+      - QTUBE_CLEANUP_DAYS=${QTUBE_CLEANUP_DAYS:-7}
+    volumes:
+      - .:/app
+      - ${HOST_DOWNLOADS_DIR:-./downloads}:/app/downloads
+      - ${HOST_DATA_DIR:-./data}:/app/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "corepack enable && yarn install && yarn dev"
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_BASE=http://localhost:${API_PORT:-8000}
+
+volumes:
+  redis_data:
