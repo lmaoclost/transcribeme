@@ -734,7 +734,7 @@
 
 "@radix-ui/react-dialog@^1.1.23":
   version "1.1.23"
-  resolved "https://registry.npmjs.org/@radix-ui/react-dialog/-/react-dialog-1.1.23.tgz"
+  resolved "https://registry.yarnpkg.com/@radix-ui/react-dialog/-/react-dialog-1.1.23.tgz#b7d8e83a3ccf97e46f3c3f477a0bf563f0de8239"
   integrity sha512-Ksw4WeROkO4rC9k/onilX/Ao2Cr1ku1unMNH+XSCcP4jSXYu7HDsg9n4ojMjVb22XpYjAQ9qfrFlVbru1vXDUA==
   dependencies:
     "@radix-ui/primitive" "1.1.7"
