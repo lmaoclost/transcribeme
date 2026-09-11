@@ -25,7 +25,11 @@ logger = get_task_logger(__name__)
 
 @worker_process_init.connect
 def init_transcriber(**kwargs):
-    transcribe_video.transcriber = WhisperTranscriber()
+    # download/beat workers run on the slim image (no faster-whisper): skip preload there
+    try:
+        transcribe_video.transcriber = WhisperTranscriber()
+    except ModuleNotFoundError as e:
+        logger.info("Skipping transcriber preload (ML deps absent on this worker): %s", e)
 
 
 @celery_app.task(bind=True, name="app.transcription_processor.transcribe_video")

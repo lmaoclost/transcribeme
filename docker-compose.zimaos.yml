@@ -259,8 +259,8 @@ services:
   frontend:
     cpu_shares: 90
     command:
-      - yarn
-      - start
+      - node
+      - server.js
     container_name: transcribeme-frontend
     deploy:
       resources:
