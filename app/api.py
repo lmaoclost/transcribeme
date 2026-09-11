@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import init_db
-from app.routers import batches, health, jobs, legacy, preview, settings, uploads
+from app.routers import batches, health, jobs, preview, settings, uploads
 from app.routers.deps import settings as _settings
 
 
@@ -40,7 +40,6 @@ def create_app() -> FastAPI:
     app.include_router(uploads.router)
     app.include_router(jobs.router)
     app.include_router(batches.router)
-    app.include_router(legacy.router)
 
     return app
 

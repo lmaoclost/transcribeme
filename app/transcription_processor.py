@@ -14,7 +14,7 @@ from app import db
 from app.models import Job, JobStatus
 from sqlalchemy import func, select
 
-from app.services.jobs import add_job_event, create_job, update_batch_status, update_job_status
+from app.services.jobs import add_job_event, update_batch_status, update_job_status
 from app.whisper_transcriber import WhisperTranscriber
 from app.models import TranscriptVersion
 from app.audio_tools import accelerate_audio, split_audio_for_transcription
@@ -174,33 +174,3 @@ def transcribe_video(self, job_id: str) -> None:
                 update_batch_status(session, job.batch_id)
                 session.commit()
 
-
-def find_untranscribed_videos(directory: Path) -> list[Path]:
-    """Find mp4 files with no matching txt transcript."""
-    untranscribed = []
-    for video_path in directory.glob("**/*.mp4"):
-        txt_path = video_path.with_name(video_path.name + ".txt")
-        if not txt_path.exists():
-            untranscribed.append(video_path)
-    return untranscribed
-
-
-@celery_app.task(name="app.transcription_processor.process_untranscribed_videos")
-def process_untranscribed_videos(directory: str | None = None) -> None:
-    """Queue transcription jobs for any downloaded videos missing transcripts."""
-    target_dir = Path(directory or get_settings().downloads_dir)
-    untranscribed = find_untranscribed_videos(target_dir)
-    logger.info("Found %s untranscribed videos", len(untranscribed))
-
-    with db.SessionLocal() as session:
-        for video_path in untranscribed:
-            existing = session.scalar(
-                select(Job).where(Job.download_path == str(video_path))
-            )
-            if existing:
-                continue
-            job = create_job(session, source_url="local", video_url=None)
-            update_job_status(session, job, JobStatus.downloaded, progress=50.0, download_path=str(video_path))
-            add_job_event(session, job.id, "downloaded", "Imported local download", 50.0)
-            session.commit()
-            transcribe_video.apply_async(args=[job.id], queue="transcription_queue")
