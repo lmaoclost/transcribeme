@@ -6,8 +6,8 @@ from app.models import Batch
 def test_create_jobs_enqueues_batch(client, db_session, monkeypatch):
     calls = []
 
-    def fake_delay_with_format(batch_id, url, format_id):
-        calls.append((batch_id, url, format_id))
+    def fake_delay_with_format(batch_id, url, format_id, job_id=None):
+        calls.append((batch_id, url, format_id, job_id))
 
     monkeypatch.setattr("app.api.enqueue_url.delay", fake_delay_with_format)
 

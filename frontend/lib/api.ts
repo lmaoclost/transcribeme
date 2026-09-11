@@ -42,6 +42,15 @@ export async function fetchSettings(): Promise<SettingsResponse> {
   return handleResponse(response);
 }
 
+export async function updateSettings(payload: Partial<SettingsResponse>): Promise<SettingsResponse> {
+  const response = await fetch(`${API_BASE}/settings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse(response);
+}
+
 export async function previewFormats(url: string): Promise<PreviewResponse> {
   const response = await fetch(`${API_BASE}/preview`, {
     method: "POST",

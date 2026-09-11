@@ -9,16 +9,16 @@ from faster_whisper import WhisperModel
 
 from app.config import get_settings
 
-settings = get_settings()
-
 
 class WhisperTranscriber:
     """faster-whisper transcriber."""
 
     def __init__(self, model: str | None = None) -> None:
-        model_name = model or settings.whisper_model
-        self.device = settings.transcription_device
-        self.compute_type = settings.transcription_compute_type
+        s = get_settings()
+        model_name = model or s.whisper_model
+        self.model_name = model_name
+        self.device = s.transcription_device
+        self.compute_type = s.transcription_compute_type
 
         print(f"Loading faster-whisper model '{model_name}' on {self.device}")
         self.model = WhisperModel(
@@ -27,6 +27,24 @@ class WhisperTranscriber:
             compute_type=self.compute_type,
         )
         print(f"Model loaded successfully on {self.device}")
+
+    def ensure_model(self, wanted: str | None = None) -> None:
+        """Reload model if settings changed (for Options modal)."""
+        from app.config import get_settings as _gs
+
+        target = wanted or _gs().whisper_model
+        if target != getattr(self, "model_name", None):
+            s = _gs()
+            print(f"Switching faster-whisper model '{self.model_name}' -> '{target}'")
+            self.model = WhisperModel(
+                target,
+                device=s.transcription_device,
+                compute_type=s.transcription_compute_type,
+            )
+            self.model_name = target
+            self.device = s.transcription_device
+            self.compute_type = s.transcription_compute_type
+            print(f"Model switched to '{target}'")
 
     def transcribe_audio(self, audio_file: Path) -> tuple[str, str | None]:
         """Transcribe audio, auto-detect language. Returns (text, lang)."""

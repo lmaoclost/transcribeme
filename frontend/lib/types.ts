@@ -57,6 +57,11 @@ export interface JobListResponse {
 export interface SettingsResponse {
   cookies_configured: boolean;
   cookies_path: string | null;
+  whisper_model: string;
+  translation_target_lang_code: string;
+  transcription_speed: number;
+  youtube_prefer_captions: boolean;
+  youtube_sub_langs: string;
 }
 
 export interface DownloadFormatOption {

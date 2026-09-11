@@ -11,8 +11,6 @@ from yt_dlp import YoutubeDL
 from app.config import get_settings
 from app.download_processor import _base_ydl_params
 
-settings = get_settings()
-
 # map caption lang codes to whisper-style short codes for NLLB
 CAPTION_TO_SHORT = {
     "pt": "pt", "pt-BR": "pt", "pt-PT": "pt",
@@ -80,7 +78,7 @@ def fetch_youtube_transcript(url: str, langs: list[str] | None = None) -> tuple[
     if not _is_youtube_url(url):
         return None
     if langs is None:
-        langs = [s.strip() for s in settings.youtube_sub_langs.split(",") if s.strip()]
+        langs = [s.strip() for s in get_settings().youtube_sub_langs.split(",") if s.strip()]
     # Try langs one by one to avoid 429 from requesting many at once
     for lang_try in langs:
         tmpdir = Path(tempfile.mkdtemp(prefix="ytcap_"))

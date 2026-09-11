@@ -24,7 +24,6 @@ from app.services.jobs import (
 from sqlalchemy import func
 
 logger = get_task_logger(__name__)
-settings = get_settings()
 
 INFO_YDL: Optional[YoutubeDL] = None
 
@@ -106,7 +105,7 @@ def _safe_entries(info: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _create_output_dir(uploader: str) -> Path:
-    base = Path(settings.downloads_dir)
+    base = Path(get_settings().downloads_dir)
     target = base / uploader
     target.mkdir(parents=True, exist_ok=True)
     return target
@@ -193,15 +192,23 @@ def enqueue_url(batch_id: str, url: str, requested_format: Optional[str] = None,
             title = yt_info.get("title")
             output_dir = _create_output_dir(uploader)
             # Try YouTube captions first (even auto), fallback to whisper
-            if settings.youtube_prefer_captions:
+            _s = get_settings()
+            if _s.youtube_prefer_captions:
                 try:
                     from app.services.youtube_captions import fetch_youtube_transcript
-                    from app.services.translation import translate as translate_to_pt_br, needs_translation as cap_needs_translation
+                    from app.services.translation import translate as translate_to_pt_br
 
                     cap = fetch_youtube_transcript(url)
                     if cap:
                         raw_text, cap_lang = cap
-                        pt_text = translate_to_pt_br(raw_text, cap_lang) if cap_needs_translation(cap_lang) else raw_text
+                        tgt_code = _s.translation_target_lang_code
+                        # decide skip if src matches target
+                        src_short = (cap_lang or "").lower()[:2]
+                        tgt_short = tgt_code.split("_")[0][:2].lower() if "_" in tgt_code else tgt_code[:2].lower()
+                        prefix_map = {"por": "pt", "eng": "en", "spa": "es", "fra": "fr", "deu": "de"}
+                        tgt_as_short = prefix_map.get(tgt_code.split("_")[0].lower()[:3], tgt_short)
+                        needs_tr = not (src_short and src_short == tgt_as_short)
+                        pt_text = translate_to_pt_br(raw_text, cap_lang, tgt_code) if needs_tr else raw_text
                         # reuse optimistic job if provided
                         if job_id:
                             job = session.get(Job, job_id)
@@ -228,7 +235,7 @@ def enqueue_url(batch_id: str, url: str, requested_format: Optional[str] = None,
                         tv = TranscriptVersion(job_id=job.id, version=1, transcript_path=transcript_path, model_name="caption", source_lang=cap_lang)
                         session.add(tv)
                         update_job_status(session, job, JobStatus.completed, progress=100.0, transcript_path=transcript_path)
-                        add_job_event(session, job.id, "completed", f"Captions fetched v1 lang={cap_lang}->pt-BR" if cap_needs_translation(cap_lang) else f"Captions fetched v1 lang={cap_lang}", 100.0)
+                        add_job_event(session, job.id, "completed", f"Captions fetched v1 lang={cap_lang}->{tgt_code}" if needs_tr else f"Captions fetched v1 lang={cap_lang}", 100.0)
                         session.commit()
                         update_batch_status(session, batch_id)
                         session.commit()

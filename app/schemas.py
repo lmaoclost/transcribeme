@@ -92,6 +92,19 @@ class BatchDetailResponse(BaseModel):
 class SettingsResponse(BaseModel):
     cookies_configured: bool
     cookies_path: Optional[str]
+    whisper_model: str
+    translation_target_lang_code: str
+    transcription_speed: float
+    youtube_prefer_captions: bool
+    youtube_sub_langs: str
+
+
+class SettingsUpdateRequest(BaseModel):
+    whisper_model: Optional[str] = Field(default=None, pattern="^(small|medium|large-v3)$")
+    translation_target_lang_code: Optional[str] = Field(default=None, max_length=16)
+    transcription_speed: Optional[float] = Field(default=None, ge=1.0, le=1.5)
+    youtube_prefer_captions: Optional[bool] = None
+    youtube_sub_langs: Optional[str] = None
 
 
 class PreviewRequest(BaseModel):

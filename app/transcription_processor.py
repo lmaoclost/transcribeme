@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from celery.signals import worker_process_init
@@ -18,10 +18,9 @@ from app.services.jobs import add_job_event, create_job, update_batch_status, up
 from app.whisper_transcriber import WhisperTranscriber
 from app.models import TranscriptVersion
 from app.audio_tools import accelerate_audio, split_audio_for_transcription
-from app.services.translation import translate as translate_to_pt_br, needs_translation
+from app.services.translation import translate as translate_to_pt_br
 
 logger = get_task_logger(__name__)
-settings = get_settings()
 
 
 @worker_process_init.connect
@@ -31,7 +30,14 @@ def init_transcriber(**kwargs):
 
 @celery_app.task(bind=True, name="app.transcription_processor.transcribe_video")
 def transcribe_video(self, job_id: str) -> None:
-    """Translate the downloaded video to pt-BR."""
+    """Transcribe then translate to configured output language."""
+    settings = get_settings()
+    # ensure whisper model matches Options modal selection
+    try:
+        if hasattr(self, "transcriber") and self.transcriber is not None:
+            self.transcriber.ensure_model(settings.whisper_model)
+    except Exception as e:
+        logger.warning("Model switch check failed: %s", e)
     with db.SessionLocal() as session:
         job = session.get(Job, job_id)
         if not job:
@@ -85,7 +91,7 @@ def transcribe_video(self, job_id: str) -> None:
                     if total > 1 and idx + 1 == mid:
                         pct = 60 + (mid / total) * 25  # 60->85 midpoint
                         job.progress = pct
-                        job.updated_at = datetime.utcnow()
+                        job.updated_at = datetime.now(timezone.utc)
                         session.add(job)
                         add_job_event(session, job.id, "transcribing", f"Transcribing {idx+1}/{total}", pct)
                         session.commit()
@@ -106,15 +112,22 @@ def transcribe_video(self, job_id: str) -> None:
                 except Exception:
                     pass
 
-            # Translate to pt-BR if needed
-            if needs_translation(lang):
-                logger.info("Translating %s -> pt-BR via NLLB", lang)
-                add_job_event(session, job.id, "translating", f"Translating {lang} -> pt-BR", 85.0)
+            # Translate to configured output language if needed
+            tgt_code = settings.translation_target_lang_code
+            src_short = (lang or "").lower()[:2]
+            tgt_short = tgt_code.split("_")[0][:2].lower() if "_" in tgt_code else tgt_code[:2].lower()
+            # map NLLB target prefix to short: por->pt, eng->en, spa->es...
+            prefix_map = {"por": "pt", "eng": "en", "spa": "es", "fra": "fr", "deu": "de"}
+            tgt_as_short = prefix_map.get(tgt_code.split("_")[0].lower()[:3], tgt_short)
+            needs_tr = not (src_short and src_short == tgt_as_short)
+            if needs_tr:
+                logger.info("Translating %s -> %s via NLLB", lang, tgt_code)
+                add_job_event(session, job.id, "translating", f"Translating {lang} -> {tgt_code}", 85.0)
                 session.commit()
-                transcription = translate_to_pt_br(raw_transcription, lang)
+                transcription = translate_to_pt_br(raw_transcription, lang, tgt_code)
             else:
                 transcription = raw_transcription
-                logger.info("Source is pt (%s), skipping translation", lang)
+                logger.info("Source is target (%s), skipping translation", lang)
 
             # Versioning: keep old
             existing_count = session.scalar(
@@ -132,7 +145,7 @@ def transcribe_video(self, job_id: str) -> None:
             # store version
             tv = TranscriptVersion(
                 job_id=job.id, version=version, transcript_path=transcript_path,
-                model_name=settings.whisper_model, source_lang=lang
+                model_name=get_settings().whisper_model, source_lang=lang
             )
             session.add(tv)
             # update job
@@ -142,7 +155,8 @@ def transcribe_video(self, job_id: str) -> None:
             if lang:
                 job.source_lang = lang
                 session.add(job)
-            add_job_event(session, job.id, "completed", f"Transcription+translation completed v{version} lang={lang}->pt-BR", 100.0)
+            tgt_code_done = get_settings().translation_target_lang_code
+            add_job_event(session, job.id, "completed", f"Transcription+translation completed v{version} lang={lang}->{tgt_code_done}", 100.0)
             session.commit()
             if job.batch_id:
                 update_batch_status(session, job.batch_id)
@@ -170,7 +184,7 @@ def find_untranscribed_videos(directory: Path) -> list[Path]:
 @celery_app.task(name="app.transcription_processor.process_untranscribed_videos")
 def process_untranscribed_videos(directory: str | None = None) -> None:
     """Queue transcription jobs for any downloaded videos missing transcripts."""
-    target_dir = Path(directory or settings.downloads_dir)
+    target_dir = Path(directory or get_settings().downloads_dir)
     untranscribed = find_untranscribed_videos(target_dir)
     logger.info("Found %s untranscribed videos", len(untranscribed))
 

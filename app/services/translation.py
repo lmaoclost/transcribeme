@@ -8,8 +8,6 @@ from typing import Optional
 
 from app.config import get_settings
 
-settings = get_settings()
-
 # whisper lang -> NLLB code
 WHISPER_TO_NLLB = {
     "en": "eng_Latn",
@@ -49,15 +47,15 @@ def _lazy_load():
     if _model is not None:
         return
     from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-    import torch
 
-    model_id = settings.translation_model
-    cache_dir = Path(settings.models_dir) / "nllb"
+    s = get_settings()
+    model_id = s.translation_model
+    cache_dir = Path(s.models_dir) / "nllb"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Loading NLLB model '{model_id}' on {settings.translation_device} ...")
+    print(f"Loading NLLB model '{model_id}' on {s.translation_device} ...")
     _tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=str(cache_dir))
     _model = AutoModelForSeq2SeqLM.from_pretrained(model_id, cache_dir=str(cache_dir))
-    if settings.translation_device == "cpu":
+    if s.translation_device == "cpu":
         _model = _model.to("cpu")
     _model.eval()
     print("NLLB loaded")
@@ -92,27 +90,39 @@ def _chunk_text(text: str, max_tokens: int = 400) -> list[str]:
         chunks.append(cur.strip())
     return chunks if chunks else [text]
 
-def translate(text: str, src_lang: Optional[str]) -> str:
+def translate(text: str, src_lang: Optional[str], tgt_code: Optional[str] = None) -> str:
     if not text.strip():
         return text
-    if not needs_translation(src_lang):
+    s = get_settings()
+    tgt = tgt_code or s.translation_target_lang_code
+    # map short target like "pt" to NLLB code if needed
+    if "_" not in tgt:
+        short_map = {"pt": "por_Latn", "en": "eng_Latn", "es": "spa_Latn", "fr": "fra_Latn", "de": "deu_Latn"}
+        tgt = short_map.get(tgt.lower(), "por_Latn")
+    # skip if source already matches target language family
+    if src_lang and tgt.lower().startswith(src_lang.lower()[:2]):
+        # e.g. src pt + tgt por_Latn -> skip
+        if src_lang.lower().startswith("pt") and tgt == "por_Latn":
+            return text
+    if not needs_translation(src_lang) and tgt == "por_Latn":
         return text
     _lazy_load()
     import torch
 
     src_code = whisper_to_nllb(src_lang)
-    tgt_code = settings.translation_target_lang_code
+    tgt_code = tgt
 
     # tokenizer src lang must be set
     assert _tokenizer is not None and _model is not None
     _tokenizer.src_lang = src_code
 
+    s = get_settings()
     chunks = _chunk_text(text)
     outputs: list[str] = []
     for chunk in chunks:
         inputs = _tokenizer(chunk, return_tensors="pt", truncation=True, max_length=512)
         # move to device
-        if settings.translation_device == "cpu":
+        if s.translation_device == "cpu":
             inputs = {k: v.cpu() for k, v in inputs.items()}
         with torch.no_grad():
             generated = _model.generate(

@@ -6,7 +6,10 @@ __pycache__/
 .pytest_cache/
 data/*.db
 data/*.db-journal
+data/settings.json
 downloads/
 models/
 celerybeat-schedule
 .celerybeat
+build/
+*.egg-info/

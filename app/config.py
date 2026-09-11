@@ -1,6 +1,7 @@
 """Application configuration."""
 
-from functools import lru_cache
+import json
+from pathlib import Path
 from typing import List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -41,6 +42,25 @@ class Settings(BaseSettings):
     )
 
 
-@lru_cache
+SETTINGS_FILE = Path("data/settings.json")
+
 def get_settings() -> Settings:
+    if SETTINGS_FILE.exists():
+        try:
+            data = json.loads(SETTINGS_FILE.read_text())
+            return Settings(**data)
+        except Exception:
+            pass
     return Settings()
+
+def save_settings(updates: dict) -> Settings:
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    current = {}
+    if SETTINGS_FILE.exists():
+        try:
+            current = json.loads(SETTINGS_FILE.read_text())
+        except Exception:
+            current = {}
+    current.update({k: v for k, v in updates.items() if v is not None})
+    SETTINGS_FILE.write_text(json.dumps(current, indent=2))
+    return get_settings()
