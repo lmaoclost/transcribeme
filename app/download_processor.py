@@ -198,7 +198,7 @@ def enqueue_url(batch_id: str, url: str, requested_format: Optional[str] = None,
                     from app.services.youtube_captions import fetch_youtube_transcript
                     from app.services.translation import translate as translate_to_pt_br
 
-                    cap = fetch_youtube_transcript(url)
+                    cap = fetch_youtube_transcript(url, target_lang=_s.translation_target_lang_code)
                     if cap:
                         raw_text, cap_lang = cap
                         tgt_code = _s.translation_target_lang_code

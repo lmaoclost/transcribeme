@@ -19,6 +19,27 @@ CAPTION_TO_SHORT = {
     "fr": "fr", "de": "de", "ja": "ja",
 }
 
+# reverse: NLLB target code -> YouTube subtitle lang (short codes are valid YT langs)
+_NLLB_TO_SHORT = {v: k for k, v in {
+    "en": "eng_Latn", "pt": "por_Latn", "es": "spa_Latn", "fr": "fra_Latn",
+    "de": "deu_Latn", "it": "ita_Latn", "nl": "nld_Latn", "pl": "pol_Latn",
+    "ru": "rus_Cyrl", "ja": "jpn_Jpan", "zh": "zho_Hans", "ko": "kor_Hang",
+    "ar": "arb_Arab", "tr": "tur_Latn", "hi": "hin_Deva", "id": "ind_Latn",
+    "vi": "vie_Latn", "uk": "ukr_Cyrl", "ro": "ron_Latn", "sv": "swe_Latn",
+    "no": "nno_Latn", "da": "dan_Latn", "fi": "fin_Latn", "cs": "ces_Latn",
+    "el": "ell_Grek", "he": "heb_Hebr", "th": "tha_Thai",
+}.items()}
+
+
+def nllb_to_youtube(tgt_code: str | None) -> str | None:
+    """Map an NLLB target code (eng_Latn) to a YouTube subtitle lang (en)."""
+    if not tgt_code:
+        return None
+    if tgt_code in _NLLB_TO_SHORT:
+        return _NLLB_TO_SHORT[tgt_code]
+    # fallback heuristic: first two letters of the language prefix
+    return tgt_code.split("_")[0][:2].lower() or None
+
 TIMESTAMP_RE = re.compile(r"^\d{2}:\d{2}:\d{2}\.\d{3}\s*-->.*$")
 NUMERIC_RE = re.compile(r"^\d+$")
 BRACKET_MUSIC_RE = re.compile(r"^\s*[\[\(].*?(music|laughter|applause|noise|inaudible|música|risos).*?[\]\)]\s*$", re.IGNORECASE)
@@ -73,14 +94,33 @@ def clean_vtt_text(raw: str) -> str:
 def _is_youtube_url(url: str) -> bool:
     return "youtube.com" in url or "youtu.be" in url
 
-def fetch_youtube_transcript(url: str, langs: list[str] | None = None) -> tuple[str, str] | None:
-    """Try to download captions. Returns (clean_text, detected_lang) or None if no caption."""
+def fetch_youtube_transcript(
+    url: str, langs: list[str] | None = None, target_lang: str | None = None
+) -> tuple[str, str] | None:
+    """Try to download captions. Returns (clean_text, detected_lang) or None if no caption.
+
+    The target output language goes first: native target captions (official,
+    else auto — yt-dlp already prefers official per lang) win over any other
+    language, so NLLB only runs when no target captions exist.
+    """
     if not _is_youtube_url(url):
         return None
     if langs is None:
         langs = [s.strip() for s in get_settings().youtube_sub_langs.split(",") if s.strip()]
+    if target_lang is None:
+        try:
+            target_lang = get_settings().translation_target_lang_code
+        except Exception:
+            target_lang = None
+    ordered = list(langs)
+    yt_target = nllb_to_youtube(target_lang)
+    if yt_target and yt_target not in ordered:
+        ordered.insert(0, yt_target)
+    elif yt_target:
+        ordered.remove(yt_target)
+        ordered.insert(0, yt_target)
     # Try langs one by one to avoid 429 from requesting many at once
-    for lang_try in langs:
+    for lang_try in ordered:
         tmpdir = Path(tempfile.mkdtemp(prefix="ytcap_"))
         ydl_params = {
             **_base_ydl_params(),
