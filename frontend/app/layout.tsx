@@ -15,8 +15,9 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "QueueTube Whisper",
-  description: "Queue, download, and transcribe YouTube videos with a CPU-first pipeline."
+  title: "Transcribeme",
+  description: "Queue YouTube/URL/uploads, transcribe + translate (whisper + NLLB), CPU ready.",
+  icons: { icon: "/favicon.ico" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

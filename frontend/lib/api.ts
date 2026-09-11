@@ -8,7 +8,7 @@ import type {
 function resolveApiBase(): string {
   const env = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
   if (env === "__LAN_AUTO__" && typeof window !== "undefined") {
-    return `http://${window.location.hostname}:8000`;
+    return `http://${window.location.hostname}:8016`;
   }
   return env;
 }

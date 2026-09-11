@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import List
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -39,7 +40,36 @@ class Settings(BaseSettings):
         env_prefix="QTUBE_",
         env_file=".env",
         extra="ignore",
+        env_ignore_empty=True,
     )
+
+    @field_validator(
+        "max_upload_size_mb",
+        "upload_chunk_size_mb",
+        "cleanup_days",
+        "splitter_threshold_minutes",
+        "splitter_chunk_minutes",
+        "transcription_speed",
+        "whisper_model",
+        "transcription_device",
+        "transcription_compute_type",
+        "transcription_target_lang",
+        "translation_model",
+        "translation_device",
+        "translation_target_lang_code",
+        "youtube_sub_langs",
+        "redis_url",
+        "database_url",
+        "downloads_dir",
+        "models_dir",
+        mode="before",
+    )
+    @classmethod
+    def _empty_to_default(cls, v, info):
+        # ZimaOS/CasaOS injects "" for blank UI fields — fall back to defaults
+        if v == "":
+            return cls.model_fields[info.field_name].default
+        return v
 
 
 SETTINGS_FILE = Path("data/settings.json")
@@ -61,6 +91,6 @@ def save_settings(updates: dict) -> Settings:
             current = json.loads(SETTINGS_FILE.read_text())
         except Exception:
             current = {}
-    current.update({k: v for k, v in updates.items() if v is not None})
+    current.update({k: v for k, v in updates.items() if v is not None and v != ""})
     SETTINGS_FILE.write_text(json.dumps(current, indent=2))
     return get_settings()
