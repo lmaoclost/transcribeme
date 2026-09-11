@@ -1,16 +1,37 @@
 name: transcribeme
 
+networks:
+  transcribeme_network:
+    name: transcribeme_network
+    driver: bridge
+    ipam: {}
+    external: false
+
 services:
   api:
-    image: ghcr.io/lmaoclost/transcribeme-backend:latest
-    ports:
-      - "${API_PORT:-8000}:8000"
-    volumes:
-      - ${HOST_DATA_DIR:-/DATA/AppData/transcribeme/data}:/app/data
-      - ${HOST_DOWNLOADS_DIR:-/DATA/AppData/transcribeme/downloads}:/app/downloads
-      - ${HOST_MODELS_DIR:-/DATA/AppData/transcribeme/models}:/app/models
+    cpu_shares: 90
+    command:
+      - uvicorn
+      - app.api:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    container_name: transcribeme-api
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+        required: true
+    deploy:
+      resources:
+        limits:
+          memory: 2GB
+          cpus: "1.00"
+        reservations:
+          memory: 256MB
+          cpus: "0.00"
+      placement: {}
+    entrypoint: null
     environment:
       - PYTHONPATH=/app
       - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
@@ -22,15 +43,55 @@ services:
       - QTUBE_CLEANUP_DAYS=${QTUBE_CLEANUP_DAYS:-7}
       - QTUBE_TRANSLATION_MODEL=${QTUBE_TRANSLATION_MODEL:-facebook/nllb-200-distilled-600M}
       - QTUBE_TRANSCRIPTION_SPEED=${QTUBE_TRANSCRIPTION_SPEED:-1.5}
+    image: ghcr.io/lmaoclost/transcribeme-backend:latest
+    networks:
+      - transcribeme_network
+    ports:
+      - mode: ingress
+        target: 8000
+        published: "8016"
+        protocol: tcp
     restart: unless-stopped
-  redis:
-    image: "redis:7-alpine"
     volumes:
-      - redis_data:/data
-    restart: unless-stopped
+      - type: bind
+        source: /DATA/AppData/transcribeme/data
+        target: /app/data
+        bind:
+          create_host_path: true
+      - type: bind
+        source: /DATA/AppData/transcribeme/downloads
+        target: /app/downloads
+        bind:
+          create_host_path: true
+      - type: bind
+        source: /DATA/AppData/transcribeme/models
+        target: /app/models
+        bind:
+          create_host_path: true
+
   celery_transcription:
-    image: ghcr.io/lmaoclost/transcribeme-backend:latest
-    command: celery -A app.celery_app worker --loglevel=info --concurrency 1 -Q transcription_queue
+    cpu_shares: 90
+    command:
+      - celery
+      - -A
+      - app.celery_app
+      - worker
+      - --loglevel=info
+      - --concurrency
+      - "1"
+      - -Q
+      - transcription_queue
+    container_name: transcribeme-worker-transcription
+    deploy:
+      resources:
+        limits:
+          memory: 6GB
+          cpus: "2.00"
+        reservations:
+          memory: 1GB
+          cpus: "0.00"
+      placement: {}
+    entrypoint: null
     environment:
       - PYTHONPATH=/app
       - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
@@ -41,47 +102,195 @@ services:
       - QTUBE_TRANSCRIPTION_COMPUTE_TYPE=int8
       - QTUBE_TRANSLATION_MODEL=${QTUBE_TRANSLATION_MODEL:-facebook/nllb-200-distilled-600M}
       - QTUBE_TRANSCRIPTION_SPEED=${QTUBE_TRANSCRIPTION_SPEED:-1.5}
-    volumes:
-      - ${HOST_DOWNLOADS_DIR:-/DATA/AppData/transcribeme/downloads}:/app/downloads
-      - ${HOST_MODELS_DIR:-/DATA/AppData/transcribeme/models}:/app/models
-      - ${HOST_DATA_DIR:-/DATA/AppData/transcribeme/data}:/app/data
-    depends_on:
-      - redis
-    restart: unless-stopped
-  celery_download:
     image: ghcr.io/lmaoclost/transcribeme-backend:latest
-    command: celery -A app.celery_app worker --loglevel=info --concurrency 1 -Q download_queue
+    networks:
+      - transcribeme_network
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_started
+        required: true
+    volumes:
+      - type: bind
+        source: /DATA/AppData/transcribeme/downloads
+        target: /app/downloads
+        bind:
+          create_host_path: true
+      - type: bind
+        source: /DATA/AppData/transcribeme/models
+        target: /app/models
+        bind:
+          create_host_path: true
+      - type: bind
+        source: /DATA/AppData/transcribeme/data
+        target: /app/data
+        bind:
+          create_host_path: true
+
+  celery_download:
+    cpu_shares: 90
+    command:
+      - celery
+      - -A
+      - app.celery_app
+      - worker
+      - --loglevel=info
+      - --concurrency
+      - "1"
+      - -Q
+      - download_queue
+    container_name: transcribeme-worker-download
+    deploy:
+      resources:
+        limits:
+          memory: 2GB
+          cpus: "1.00"
+        reservations:
+          memory: 256MB
+          cpus: "0.00"
+      placement: {}
+    entrypoint: null
     environment:
       - PYTHONPATH=/app
       - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
       - QTUBE_DOWNLOADS_DIR=/app/downloads
-    volumes:
-      - ${HOST_DOWNLOADS_DIR:-/DATA/AppData/transcribeme/downloads}:/app/downloads
-      - ${HOST_DATA_DIR:-/DATA/AppData/transcribeme/data}:/app/data
-    depends_on:
-      - redis
-    restart: unless-stopped
-  celery_beat:
     image: ghcr.io/lmaoclost/transcribeme-backend:latest
-    command: celery -A app.celery_app beat --loglevel=info
+    networks:
+      - transcribeme_network
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_started
+        required: true
+    volumes:
+      - type: bind
+        source: /DATA/AppData/transcribeme/downloads
+        target: /app/downloads
+        bind:
+          create_host_path: true
+      - type: bind
+        source: /DATA/AppData/transcribeme/data
+        target: /app/data
+        bind:
+          create_host_path: true
+
+  celery_beat:
+    cpu_shares: 90
+    command:
+      - celery
+      - -A
+      - app.celery_app
+      - beat
+      - --loglevel=info
+    container_name: transcribeme-beat
+    deploy:
+      resources:
+        limits:
+          memory: 1GB
+          cpus: "0.50"
+        reservations:
+          memory: 128MB
+          cpus: "0.00"
+      placement: {}
+    entrypoint: null
     environment:
       - PYTHONPATH=/app
       - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
       - QTUBE_DOWNLOADS_DIR=/app/downloads
       - QTUBE_CLEANUP_DAYS=${QTUBE_CLEANUP_DAYS:-7}
-    volumes:
-      - ${HOST_DOWNLOADS_DIR:-/DATA/AppData/transcribeme/downloads}:/app/downloads
-      - ${HOST_DATA_DIR:-/DATA/AppData/transcribeme/data}:/app/data
-    depends_on:
-      - redis
+    image: ghcr.io/lmaoclost/transcribeme-backend:latest
+    networks:
+      - transcribeme_network
     restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_started
+        required: true
+    volumes:
+      - type: bind
+        source: /DATA/AppData/transcribeme/downloads
+        target: /app/downloads
+        bind:
+          create_host_path: true
+      - type: bind
+        source: /DATA/AppData/transcribeme/data
+        target: /app/data
+        bind:
+          create_host_path: true
+
+  redis:
+    cpu_shares: 90
+    command: []
+    container_name: transcribeme-redis
+    deploy:
+      resources:
+        limits:
+          memory: 512MB
+          cpus: "0.50"
+        reservations:
+          memory: 64MB
+          cpus: "0.00"
+      placement: {}
+    entrypoint: null
+    image: redis:7-alpine
+    networks:
+      - transcribeme_network
+    restart: always
+    volumes:
+      - type: volume
+        source: redis_data
+        target: /data
+
   frontend:
-    image: ghcr.io/lmaoclost/transcribeme-frontend:latest
-    ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+    cpu_shares: 90
+    command:
+      - yarn
+      - start
+    container_name: transcribeme-frontend
+    deploy:
+      resources:
+        limits:
+          memory: 1GB
+          cpus: "0.50"
+        reservations:
+          memory: 128MB
+          cpus: "0.00"
+      placement: {}
+    entrypoint: null
     environment:
       - NODE_ENV=production
+    image: ghcr.io/lmaoclost/transcribeme-frontend:latest
+    networks:
+      - transcribeme_network
+    ports:
+      - mode: ingress
+        target: 3000
+        published: "3016"
+        protocol: tcp
     restart: unless-stopped
+    volumes: []
 
 volumes:
   redis_data:
+
+x-casaos:
+  architectures:
+    - amd64
+  author: lmaoclost
+  category: BigBearCasaOS
+  description:
+    en_us: Queue YouTube/URL/uploads, transcribe + translate (whisper + NLLB), CPU ZimaOS ready.
+  developer: lmaoclost
+  hostname: ""
+  index: /
+  is_uncontrolled: false
+  main: frontend
+  port_map: "3016"
+  scheme: http
+  store_app_id: transcribeme
+  tagline:
+    en_us: Transcribeme
+  thumbnail: ""
+  title:
+    custom: Transcribeme
+    en_us: Transcribeme
