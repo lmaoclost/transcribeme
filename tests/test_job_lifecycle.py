@@ -38,7 +38,7 @@ class _FakeTranscriptionTask:
 
 def test_rerun_completed_job_requeues_and_resets(client, db_session, tmp_path, monkeypatch):
     task = _FakeTranscriptionTask()
-    monkeypatch.setattr("app.api.transcribe_video", task)
+    monkeypatch.setattr("app.routers.jobs.transcribe_video", task)
 
     job = _make_job(db_session, tmp_path, status=JobStatus.completed, error="old boom")
 
@@ -90,7 +90,7 @@ def test_delete_default_keeps_media_file(client, db_session, tmp_path, monkeypat
     from pathlib import Path
 
     # path guard confines deletes to downloads root; bypass it to test purge logic, not the guard
-    monkeypatch.setattr("app.api._resolve_download_path", lambda p: Path(p))
+    monkeypatch.setattr("app.routers.jobs._resolve_download_path", lambda p: Path(p))
     job = _make_job(db_session, tmp_path, status=JobStatus.failed)
     job_id, media_path = job.id, job.download_path
 
@@ -108,7 +108,7 @@ def test_delete_default_keeps_media_file(client, db_session, tmp_path, monkeypat
 def test_delete_purge_media_removes_file(client, db_session, tmp_path, monkeypatch):
     from pathlib import Path
 
-    monkeypatch.setattr("app.api._resolve_download_path", lambda p: Path(p))
+    monkeypatch.setattr("app.routers.jobs._resolve_download_path", lambda p: Path(p))
     job = _make_job(db_session, tmp_path, status=JobStatus.failed)
     media_path = job.download_path
 

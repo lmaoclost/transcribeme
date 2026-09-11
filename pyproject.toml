@@ -9,26 +9,28 @@ authors = [{ name = "Sean Dearnaley" }]
 
 dependencies = [
   "fastapi>=0.115.0",
-  "uvicorn[standard]>=0.34.0",
+  "uvicorn>=0.34.0",
   "celery>=5.4.0",
   "redis>=5.0.0",
   "yt-dlp>=2024.10.0",
   "pydantic>=2.7.0",
   "pydantic-settings>=2.2.0",
   "sqlalchemy>=2.0.30",
-  "faster-whisper>=1.1.0",
   "python-multipart>=0.0.9",
-  "ffmpeg-python>=0.2.0",
   "requests>=2.31.0",
   "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+# NOTE: torch is installed separately from the CPU-only index (see Dockerfile.backend.ml);
+# keep it out of this extra so the default index never pulls the CUDA bundle.
+ml = [
+  "faster-whisper>=1.1.0",
   "transformers>=4.40.0",
-  "torch>=2.2.0",
   "sentencepiece>=0.1.99",
   "accelerate>=0.27.0",
   "sacremoses>=0.0.53",
 ]
-
-[project.optional-dependencies]
 dev = [
   "pytest>=8.2.0",
   "pytest-asyncio>=0.23.6",

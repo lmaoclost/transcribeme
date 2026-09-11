@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # yt-dlp breaks when YouTube changes; keep it fresh automatically
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-name: "yt-dlp"
+      - dependency-name: "fastapi"
+      - dependency-name: "uvicorn"
+      - dependency-name: "faster-whisper"
+      - dependency-name: "transformers"
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

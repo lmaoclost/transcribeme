@@ -10,10 +10,9 @@ RUN yarn build
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=builder /app/package.json /app/yarn.lock ./
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/next.config.mjs ./next.config.mjs
-# public/ is optional (Next.js tolerates missing dir at runtime)
+# standalone server + traced prod deps only (no devDeps, no yarn needed at runtime)
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+# NOTE: no public/ dir in this project; add COPY back if one is created
 EXPOSE 3000
-CMD ["yarn", "start"]
+CMD ["node", "server.js"]

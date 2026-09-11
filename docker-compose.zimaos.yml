@@ -43,7 +43,7 @@ services:
       - QTUBE_CLEANUP_DAYS=7
       - QTUBE_TRANSLATION_MODEL=facebook/nllb-200-distilled-600M
       - QTUBE_TRANSCRIPTION_SPEED=1.5
-    image: ghcr.io/lmaoclost/transcribeme-backend:latest
+    image: ghcr.io/lmaoclost/transcribeme-backend-slim:latest
     networks:
       - transcribeme_network
     ports:
@@ -52,6 +52,12 @@ services:
         published: "8016"
         protocol: tcp
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     volumes:
       - type: bind
         source: /DATA/AppData/transcribeme/data
@@ -102,11 +108,17 @@ services:
       - QTUBE_TRANSCRIPTION_COMPUTE_TYPE=int8
       - QTUBE_TRANSLATION_MODEL=facebook/nllb-200-distilled-600M
       - QTUBE_TRANSCRIPTION_SPEED=1.5
-    image: ghcr.io/lmaoclost/transcribeme-backend:latest
+      - HF_HOME=/app/models
+      - HF_HUB_OFFLINE=0
+      - TOKENIZERS_PARALLELISM=false
+    image: ghcr.io/lmaoclost/transcribeme-backend-ml:latest
     networks:
       - transcribeme_network
     restart: unless-stopped
     depends_on:
+      api:
+        condition: service_healthy
+        required: false
       redis:
         condition: service_started
         required: true
@@ -154,11 +166,14 @@ services:
       - PYTHONPATH=/app
       - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
       - QTUBE_DOWNLOADS_DIR=/app/downloads
-    image: ghcr.io/lmaoclost/transcribeme-backend:latest
+    image: ghcr.io/lmaoclost/transcribeme-backend-slim:latest
     networks:
       - transcribeme_network
     restart: unless-stopped
     depends_on:
+      api:
+        condition: service_healthy
+        required: false
       redis:
         condition: service_started
         required: true
@@ -198,7 +213,7 @@ services:
       - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
       - QTUBE_DOWNLOADS_DIR=/app/downloads
       - QTUBE_CLEANUP_DAYS=7
-    image: ghcr.io/lmaoclost/transcribeme-backend:latest
+    image: ghcr.io/lmaoclost/transcribeme-backend-slim:latest
     networks:
       - transcribeme_network
     restart: unless-stopped

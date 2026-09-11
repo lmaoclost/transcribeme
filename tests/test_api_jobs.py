@@ -9,7 +9,7 @@ def test_create_jobs_enqueues_batch(client, db_session, monkeypatch):
     def fake_delay_with_format(batch_id, url, format_id, job_id=None):
         calls.append((batch_id, url, format_id, job_id))
 
-    monkeypatch.setattr("app.api.enqueue_url.delay", fake_delay_with_format)
+    monkeypatch.setattr("app.routers.jobs.enqueue_url.delay", fake_delay_with_format)
 
     response = client.post("/jobs", json={"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"})
     assert response.status_code == 202
@@ -84,7 +84,7 @@ def test_preview_formats_returns_payload(client, monkeypatch):
             ],
         }
 
-    monkeypatch.setattr("app.api._fetch_preview_info", fake_preview)
+    monkeypatch.setattr("app.routers.preview._fetch_preview_info", fake_preview)
 
     response = client.post("/preview", json={"url": "https://example.com/video"})
     assert response.status_code == 200

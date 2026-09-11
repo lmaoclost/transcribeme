@@ -22,6 +22,12 @@ services:
       - QTUBE_TRANSLATION_MODEL=${QTUBE_TRANSLATION_MODEL:-facebook/nllb-200-distilled-600M}
       - QTUBE_TRANSCRIPTION_SPEED=${QTUBE_TRANSCRIPTION_SPEED:-1.5}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
   redis:
     image: "redis:7-alpine"
     ports:
@@ -42,6 +48,9 @@ services:
       - QTUBE_TRANSCRIPTION_COMPUTE_TYPE=int8
       - QTUBE_TRANSLATION_MODEL=${QTUBE_TRANSLATION_MODEL:-facebook/nllb-200-distilled-600M}
       - QTUBE_TRANSCRIPTION_SPEED=${QTUBE_TRANSCRIPTION_SPEED:-1.5}
+      - HF_HOME=/app/models
+      - HF_HUB_OFFLINE=0
+      - TOKENIZERS_PARALLELISM=false
     volumes:
       - .:/app
       - ${HOST_DOWNLOADS_DIR:-./downloads}:/app/downloads

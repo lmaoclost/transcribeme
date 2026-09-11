@@ -5,9 +5,14 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from faster_whisper import WhisperModel
-
 from app.config import get_settings
+
+
+def _whisper_model_cls():
+    # lazy: faster-whisper lives on the ML image only; slim (api/download) must import cleanly
+    from faster_whisper import WhisperModel
+
+    return WhisperModel
 
 
 class WhisperTranscriber:
@@ -21,7 +26,7 @@ class WhisperTranscriber:
         self.compute_type = s.transcription_compute_type
 
         print(f"Loading faster-whisper model '{model_name}' on {self.device}")
-        self.model = WhisperModel(
+        self.model = _whisper_model_cls()(
             model_name,
             device=self.device,
             compute_type=self.compute_type,
@@ -36,7 +41,7 @@ class WhisperTranscriber:
         if target != getattr(self, "model_name", None):
             s = _gs()
             print(f"Switching faster-whisper model '{self.model_name}' -> '{target}'")
-            self.model = WhisperModel(
+            self.model = _whisper_model_cls()(
                 target,
                 device=s.transcription_device,
                 compute_type=s.transcription_compute_type,
