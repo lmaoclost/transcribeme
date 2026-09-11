@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -345,6 +346,7 @@ def create_app() -> FastAPI:
         job.status = JobStatus.queued
         job.progress = 50.0
         job.error = None
+        job.finished_at = None
         session.add(job)
         add_job_event(session, job.id, "queued", "Rerun queued for transcription", 50.0)
         session.commit()
@@ -359,7 +361,7 @@ def create_app() -> FastAPI:
         if job.status not in {JobStatus.queued, JobStatus.downloading}:
             raise HTTPException(status_code=409, detail="Only queued/downloading jobs can be canceled")
         job.status = JobStatus.canceled
-        job.finished_at = job.finished_at
+        job.finished_at = datetime.now(timezone.utc)
         session.add(job)
         add_job_event(session, job.id, "canceled", "Job canceled by user")
         # try revoke celery if downloading
