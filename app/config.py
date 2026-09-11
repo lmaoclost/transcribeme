@@ -57,6 +57,7 @@ class Settings(BaseSettings):
         "translation_model",
         "translation_device",
         "translation_target_lang_code",
+        "youtube_prefer_captions",
         "youtube_sub_langs",
         "redis_url",
         "database_url",
@@ -66,9 +67,37 @@ class Settings(BaseSettings):
     )
     @classmethod
     def _empty_to_default(cls, v, info):
-        # ZimaOS/CasaOS injects "" for blank UI fields — fall back to defaults
-        if v == "":
-            return cls.model_fields[info.field_name].default
+        # ZimaOS/CasaOS injects "" for blank UI fields, or the literal
+        # "${VAR:-default}" when interpolation isn't expanded — fall back to defaults
+        default = cls.model_fields[info.field_name].default
+        if v == "" or v is None:
+            return default
+        if isinstance(v, str) and v.strip().startswith("${"):
+            return default
+        # guard unparsable numerics (e.g. garbage strings) -> default
+        if info.field_name in {
+            "max_upload_size_mb",
+            "upload_chunk_size_mb",
+            "cleanup_days",
+            "splitter_threshold_minutes",
+            "splitter_chunk_minutes",
+        }:
+            try:
+                return int(v)
+            except (ValueError, TypeError):
+                return default
+        if info.field_name == "transcription_speed":
+            try:
+                return float(v)
+            except (ValueError, TypeError):
+                return default
+        if info.field_name == "youtube_prefer_captions" and isinstance(v, str):
+            low = v.strip().lower()
+            if low in {"1", "true", "yes", "on"}:
+                return True
+            if low in {"0", "false", "no", "off"}:
+                return False
+            return default
         return v
 
 

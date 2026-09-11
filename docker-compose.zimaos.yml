@@ -37,12 +37,12 @@ services:
       - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
       - QTUBE_DOWNLOADS_DIR=/app/downloads
       - QTUBE_MODELS_DIR=/app/models
-      - QTUBE_WHISPER_MODEL=${QTUBE_WHISPER_MODEL:-small}
+      - QTUBE_WHISPER_MODEL=small
       - QTUBE_TRANSCRIPTION_DEVICE=cpu
       - QTUBE_TRANSCRIPTION_COMPUTE_TYPE=int8
-      - QTUBE_CLEANUP_DAYS=${QTUBE_CLEANUP_DAYS:-7}
-      - QTUBE_TRANSLATION_MODEL=${QTUBE_TRANSLATION_MODEL:-facebook/nllb-200-distilled-600M}
-      - QTUBE_TRANSCRIPTION_SPEED=${QTUBE_TRANSCRIPTION_SPEED:-1.5}
+      - QTUBE_CLEANUP_DAYS=7
+      - QTUBE_TRANSLATION_MODEL=facebook/nllb-200-distilled-600M
+      - QTUBE_TRANSCRIPTION_SPEED=1.5
     image: ghcr.io/lmaoclost/transcribeme-backend:latest
     networks:
       - transcribeme_network
@@ -97,11 +97,11 @@ services:
       - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
       - QTUBE_DOWNLOADS_DIR=/app/downloads
       - QTUBE_MODELS_DIR=/app/models
-      - QTUBE_WHISPER_MODEL=${QTUBE_WHISPER_MODEL:-small}
+      - QTUBE_WHISPER_MODEL=small
       - QTUBE_TRANSCRIPTION_DEVICE=cpu
       - QTUBE_TRANSCRIPTION_COMPUTE_TYPE=int8
-      - QTUBE_TRANSLATION_MODEL=${QTUBE_TRANSLATION_MODEL:-facebook/nllb-200-distilled-600M}
-      - QTUBE_TRANSCRIPTION_SPEED=${QTUBE_TRANSCRIPTION_SPEED:-1.5}
+      - QTUBE_TRANSLATION_MODEL=facebook/nllb-200-distilled-600M
+      - QTUBE_TRANSCRIPTION_SPEED=1.5
     image: ghcr.io/lmaoclost/transcribeme-backend:latest
     networks:
       - transcribeme_network
@@ -197,7 +197,7 @@ services:
       - PYTHONPATH=/app
       - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
       - QTUBE_DOWNLOADS_DIR=/app/downloads
-      - QTUBE_CLEANUP_DAYS=${QTUBE_CLEANUP_DAYS:-7}
+      - QTUBE_CLEANUP_DAYS=7
     image: ghcr.io/lmaoclost/transcribeme-backend:latest
     networks:
       - transcribeme_network
