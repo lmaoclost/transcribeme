@@ -1,0 +1,87 @@
+name: transcribeme
+
+services:
+  api:
+    image: ghcr.io/lmaoclost/transcribeme-backend:latest
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ${HOST_DATA_DIR:-/DATA/AppData/transcribeme/data}:/app/data
+      - ${HOST_DOWNLOADS_DIR:-/DATA/AppData/transcribeme/downloads}:/app/downloads
+      - ${HOST_MODELS_DIR:-/DATA/AppData/transcribeme/models}:/app/models
+    depends_on:
+      - redis
+    environment:
+      - PYTHONPATH=/app
+      - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
+      - QTUBE_DOWNLOADS_DIR=/app/downloads
+      - QTUBE_MODELS_DIR=/app/models
+      - QTUBE_WHISPER_MODEL=${QTUBE_WHISPER_MODEL:-small}
+      - QTUBE_TRANSCRIPTION_DEVICE=cpu
+      - QTUBE_TRANSCRIPTION_COMPUTE_TYPE=int8
+      - QTUBE_CLEANUP_DAYS=${QTUBE_CLEANUP_DAYS:-7}
+      - QTUBE_TRANSLATION_MODEL=${QTUBE_TRANSLATION_MODEL:-facebook/nllb-200-distilled-600M}
+      - QTUBE_TRANSCRIPTION_SPEED=${QTUBE_TRANSCRIPTION_SPEED:-1.5}
+    restart: unless-stopped
+  redis:
+    image: "redis:7-alpine"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+  celery_transcription:
+    image: ghcr.io/lmaoclost/transcribeme-backend:latest
+    command: celery -A app.celery_app worker --loglevel=info --concurrency 1 -Q transcription_queue
+    environment:
+      - PYTHONPATH=/app
+      - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
+      - QTUBE_DOWNLOADS_DIR=/app/downloads
+      - QTUBE_MODELS_DIR=/app/models
+      - QTUBE_WHISPER_MODEL=${QTUBE_WHISPER_MODEL:-small}
+      - QTUBE_TRANSCRIPTION_DEVICE=cpu
+      - QTUBE_TRANSCRIPTION_COMPUTE_TYPE=int8
+      - QTUBE_TRANSLATION_MODEL=${QTUBE_TRANSLATION_MODEL:-facebook/nllb-200-distilled-600M}
+      - QTUBE_TRANSCRIPTION_SPEED=${QTUBE_TRANSCRIPTION_SPEED:-1.5}
+    volumes:
+      - ${HOST_DOWNLOADS_DIR:-/DATA/AppData/transcribeme/downloads}:/app/downloads
+      - ${HOST_MODELS_DIR:-/DATA/AppData/transcribeme/models}:/app/models
+      - ${HOST_DATA_DIR:-/DATA/AppData/transcribeme/data}:/app/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+  celery_download:
+    image: ghcr.io/lmaoclost/transcribeme-backend:latest
+    command: celery -A app.celery_app worker --loglevel=info --concurrency 1 -Q download_queue
+    environment:
+      - PYTHONPATH=/app
+      - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
+      - QTUBE_DOWNLOADS_DIR=/app/downloads
+    volumes:
+      - ${HOST_DOWNLOADS_DIR:-/DATA/AppData/transcribeme/downloads}:/app/downloads
+      - ${HOST_DATA_DIR:-/DATA/AppData/transcribeme/data}:/app/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+  celery_beat:
+    image: ghcr.io/lmaoclost/transcribeme-backend:latest
+    command: celery -A app.celery_app beat --loglevel=info
+    environment:
+      - PYTHONPATH=/app
+      - QTUBE_DATABASE_URL=sqlite:///./data/qtube.db
+      - QTUBE_DOWNLOADS_DIR=/app/downloads
+      - QTUBE_CLEANUP_DAYS=${QTUBE_CLEANUP_DAYS:-7}
+    volumes:
+      - ${HOST_DOWNLOADS_DIR:-/DATA/AppData/transcribeme/downloads}:/app/downloads
+      - ${HOST_DATA_DIR:-/DATA/AppData/transcribeme/data}:/app/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+  frontend:
+    image: ghcr.io/lmaoclost/transcribeme-frontend:latest
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+
+volumes:
+  redis_data:

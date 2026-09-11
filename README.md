@@ -14,10 +14,10 @@ Fork of [queuetube-whisper-transcriber](https://github.com/seandearnaley/queuetu
 - **Polling UI**: Next.js 15, single form URL + drag&drop, polling 2.5s, versions modal
 - **Compose**: `docker compose` with configurable volumes `HOST_DOWNLOADS_DIR`, `HOST_DATA_DIR`, `HOST_MODELS_DIR`, `QTUBE_WHISPER_MODEL=small`, `QTUBE_CLEANUP_DAYS=7`
 
-## Quick start (ZimaOS / any Docker)
+## Quick start (dev / any Docker)
 
 ```bash
-# configure host paths if needed (ZimaOS: point to your NAS share)
+# configure host paths if needed
 export HOST_DOWNLOADS_DIR=./downloads
 export HOST_DATA_DIR=./data
 export HOST_MODELS_DIR=./models
@@ -28,6 +28,23 @@ docker compose up --build -d
 #  Frontend:   http://localhost:3000
 #  Redis:      6379
 ```
+
+## ZimaOS (UI custom install, GHCR, auto-update)
+
+Images are published publicly to GitHub Container Registry on every `main` push:
+- `ghcr.io/lmaoclost/transcribeme-backend:latest` (+ `:sha`)
+- `ghcr.io/lmaoclost/transcribeme-frontend:latest` (+ `:sha`)
+
+1. ZimaOS → Apps → ⋯ → **Install customized app** → **Import `docker-compose.yml`** → paste `docker-compose.zimaos.yml` from this repo.
+2. Keep defaults or set:
+   - `HOST_DATA_DIR=/DATA/AppData/transcribeme/data`
+   - `HOST_DOWNLOADS_DIR=/DATA/AppData/transcribeme/downloads`
+   - `HOST_MODELS_DIR=/DATA/AppData/transcribeme/models`
+   - `API_PORT=8000`, `FRONTEND_PORT=3000`
+   - `QTUBE_WHISPER_MODEL=small`, `QTUBE_TRANSCRIPTION_SPEED=1.5`
+3. Install → open `http://<ZIMAO_IP>:3000`, API `http://<ZIMAO_IP>:8000/docs`. Frontend auto-detects API as `http://<ZIMAO_IP>:8000` when built with `__LAN_AUTO__` (no rebuild per IP).
+4. First English job downloads ~1.2GB NLLB to `models/` (persistent). Whisper `small` ~500MB to `models/` cache.
+5. Update: Apps → transcribeme → **Update** (re-pulls `:latest`). Each `main` push publishes new `:latest` + `:sha`.
 
 ## API (OpenAPI at /docs)
 

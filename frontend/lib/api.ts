@@ -5,7 +5,15 @@ import type {
   SettingsResponse
 } from "@/lib/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+function resolveApiBase(): string {
+  const env = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+  if (env === "__LAN_AUTO__" && typeof window !== "undefined") {
+    return `http://${window.location.hostname}:8000`;
+  }
+  return env;
+}
+
+const API_BASE = resolveApiBase();
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
