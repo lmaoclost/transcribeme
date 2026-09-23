@@ -57,7 +57,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@v6
         id: meta
         with:
           images: ${{ env.BACKEND_SLIM_IMAGE }}
@@ -93,7 +93,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@v6
         id: meta
         with:
           images: ${{ env.BACKEND_ML_IMAGE }}
@@ -158,7 +158,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@v6
         id: meta
         with:
           images: ${{ env.FRONTEND_IMAGE }}
