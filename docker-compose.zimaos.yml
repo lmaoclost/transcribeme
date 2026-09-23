@@ -116,9 +116,6 @@ services:
       - transcribeme_network
     restart: unless-stopped
     depends_on:
-      api:
-        condition: service_healthy
-        required: false
       redis:
         condition: service_started
         required: true
@@ -171,9 +168,6 @@ services:
       - transcribeme_network
     restart: unless-stopped
     depends_on:
-      api:
-        condition: service_healthy
-        required: false
       redis:
         condition: service_started
         required: true

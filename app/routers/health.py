@@ -33,7 +33,7 @@ def _check_redis() -> dict:
 def _check_workers() -> dict:
     from app.celery_app import celery_app
 
-    ping = celery_app.control.ping(timeout=2)
+    ping = celery_app.control.ping(timeout=5)
     names = sorted(next(iter(entry)) for entry in ping) if ping else []
     return {"status": "ok" if len(names) >= 2 else "degraded", "workers": names}
 
