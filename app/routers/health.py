@@ -1,4 +1,4 @@
-"""GET /health with deep-checks: db, redis, celery workers, queues, beat, disk."""
+"""GET /health with deep-checks: db, redis, celery workers, queues, disk, dirs."""
 
 from __future__ import annotations
 
@@ -33,7 +33,9 @@ def _check_redis() -> dict:
 def _check_workers() -> dict:
     from app.celery_app import celery_app
 
-    ping = celery_app.control.ping(timeout=5)
+    # limit=2 short-circuits once both workers reply (plain .ping() waits the
+    # FULL timeout window); workers replying early -> sub-second check
+    ping = celery_app.control.broadcast("ping", reply=True, arguments={}, timeout=5, limit=2)
     names = sorted(next(iter(entry)) for entry in ping) if ping else []
     return {"status": "ok" if len(names) >= 2 else "degraded", "workers": names}
 

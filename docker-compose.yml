@@ -23,7 +23,7 @@ services:
       - QTUBE_TRANSCRIPTION_SPEED=${QTUBE_TRANSCRIPTION_SPEED:-1.5}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3

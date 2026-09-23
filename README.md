@@ -29,10 +29,11 @@ docker compose up --build -d
 #  Redis:      6379
 ```
 
-## ZimaOS (UI custom install, GHCR, auto-update)
+## ZimaOS (UI custom install, GHCR, CLI update)
 
 Images are published publicly to GitHub Container Registry on every `main` push:
-- `ghcr.io/lmaoclost/transcribeme-backend:latest` (+ `:sha`)
+- `ghcr.io/lmaoclost/transcribeme-backend-slim:latest` (+ `:sha`) — api, beat, download worker
+- `ghcr.io/lmaoclost/transcribeme-backend-ml:latest` (+ `:sha`) — transcription worker (torch+whisper)
 - `ghcr.io/lmaoclost/transcribeme-frontend:latest` (+ `:sha`)
 
 1. ZimaOS → Apps → ⋯ → **Install customized app** → **Import `docker-compose.yml`** → paste `docker-compose.zimaos.yml` from this repo.
@@ -44,7 +45,19 @@ Images are published publicly to GitHub Container Registry on every `main` push:
    - `QTUBE_WHISPER_MODEL=small`, `QTUBE_TRANSCRIPTION_SPEED=1.5`
 3. Install → open `http://<ZIMAO_IP>:3000`, API `http://<ZIMAO_IP>:8000/docs`. Frontend auto-detects API as `http://<ZIMAO_IP>:8000` when built with `__LAN_AUTO__` (no rebuild per IP).
 4. First English job downloads ~1.2GB NLLB to `models/` (persistent). Whisper `small` ~500MB to `models/` cache.
-5. Update: Apps → transcribeme → **Update** (re-pulls `:latest`). Each `main` push publishes new `:latest` + `:sha`.
+
+**Updating (the ZimaOS Apps → Update button does NOT re-pull `:latest` for custom
+GHCR apps — use the CLI):**
+
+```bash
+# compose deployed by CasaOS lives under /var/lib/casaos/apps/compose-*/
+cd /var/lib/casaos/apps/compose-54e8d6e0b07ae767   # adjust to your dir
+sudo docker compose -f docker-compose.yml pull
+sudo docker compose -f docker-compose.yml up -d
+```
+
+Health: `curl http://<ZIMAO_IP>:8016/health` — db, redis, celery workers (2),
+queue backlog, disk, dirs. `degraded` = something is actually wrong.
 
 ## API (OpenAPI at /docs)
 
