@@ -6,6 +6,9 @@
       "DOM.Iterable",
       "ES2020"
     ],
+    "types": [
+      "vitest/globals"
+    ],
     "allowJs": false,
     "skipLibCheck": true,
     "strict": true,

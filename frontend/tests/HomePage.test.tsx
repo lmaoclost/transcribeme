@@ -15,7 +15,15 @@ beforeEach(() => {
     if (url.includes("/settings")) {
       return Promise.resolve({
         ok: true,
-        json: async () => ({ cookies_configured: false, cookies_path: null })
+        json: async () => ({
+          cookies_configured: false,
+          cookies_path: null,
+          whisper_model: "small",
+          translation_target_lang_code: "por_Latn",
+          transcription_speed: 1.5,
+          youtube_prefer_captions: true,
+          youtube_sub_langs: "pt,en"
+        })
       });
     }
     return Promise.resolve({
@@ -33,7 +41,7 @@ test("renders hero and queue form", async () => {
   );
 
   expect(
-    await screen.findByRole("heading", { name: /QueueTube Whisper/i })
+    await screen.findByRole("heading", { name: /transcribeme/i })
   ).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Add to queue/i })).toBeInTheDocument();
 });
