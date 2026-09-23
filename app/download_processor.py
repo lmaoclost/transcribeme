@@ -361,6 +361,31 @@ def download_video(self, job_id: str, url: str, output_dir: str) -> None:
                 session.commit()
             return
 
+        # yt-dlp skips re-download of existing files without firing the
+        # "finished" progress hook -> download_path stays None. Locate the
+        # file on disk so transcription can proceed.
+        session.refresh(job)
+        if not job.download_path:
+            video_id = job.video_id or ""
+            media_exts = (".mp4", ".mp3", ".m4a", ".webm", ".mkv", ".wav", ".ogg", ".mov")
+            candidates = (
+                [p for p in sorted(Path(output_dir).glob(f"*{video_id}*")) if p.suffix.lower() in media_exts]
+                if video_id
+                else []
+            )
+            if candidates:
+                update_job_status(session, job, JobStatus.downloaded, progress=50.0, download_path=str(candidates[0]))
+                add_job_event(session, job.id, "downloaded", "Download finished (already on disk)", 50.0)
+                session.commit()
+            else:
+                update_job_status(session, job, JobStatus.failed, error="Download finished but no file found")
+                add_job_event(session, job.id, "failed", "Download finished but no file found")
+                session.commit()
+                if job.batch_id:
+                    update_batch_status(session, job.batch_id)
+                    session.commit()
+                return
+
         from app.transcription_processor import transcribe_video
 
         transcribe_video.apply_async(args=[job.id], queue="transcription_queue")
