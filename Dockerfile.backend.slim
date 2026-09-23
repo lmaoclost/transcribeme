@@ -6,11 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# static ffmpeg+ffprobe binaries (~40MB total) instead of apt ffmpeg (~45s build, ~250MB installed)
+COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /ffprobe /usr/local/bin/
 
 RUN pip install --no-cache-dir uv
 
