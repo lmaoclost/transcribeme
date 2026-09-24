@@ -2,6 +2,16 @@
 from pathlib import Path
 
 
+def _ffmpeg_timeout(input_path: Path) -> int:
+    """ffmpeg needs real time on long media; 30s fixed choked on 800MB files.
+    Scale with file size: ~4s per 100MB, floor 60s, cap 20min."""
+    try:
+        size_mb = input_path.stat().st_size / 1024**2
+    except OSError:
+        size_mb = 0
+    return max(60, min(int(size_mb / 100 * 60) + 60, 1200))
+
+
 def accelerate_audio(input_path: Path, factor: float = 1.5) -> Path:
     """Accelerate audio with ffmpeg atempo (pitch-preserving). Returns new temp path or original if factor==1.0."""
     if factor == 1.0 or factor is None:
@@ -12,6 +22,9 @@ def accelerate_audio(input_path: Path, factor: float = 1.5) -> Path:
     import subprocess
     import tempfile
 
+    if not input_path.exists():
+        raise FileNotFoundError(f"cannot accelerate, missing input: {input_path}")
+
     # create temp file in same dir for cleanup tracking
     tmp = Path(tempfile.mktemp(suffix=input_path.suffix, prefix=f"acc{factor}_"))
     try:
@@ -20,7 +33,7 @@ def accelerate_audio(input_path: Path, factor: float = 1.5) -> Path:
             ["ffmpeg", "-y", "-nostdin", "-i", str(input_path), "-filter:a", f"atempo={factor}", "-ar", "16000", "-ac", "1", str(tmp)],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=_ffmpeg_timeout(input_path),
         )
         if result.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
             if tmp.exists():
@@ -28,15 +41,19 @@ def accelerate_audio(input_path: Path, factor: float = 1.5) -> Path:
                     tmp.unlink()
                 except Exception:
                     pass
-            return input_path
+            raise RuntimeError(
+                f"ffmpeg accelerate failed (rc={result.returncode}): {result.stderr[-300:]}"
+            )
         return tmp
-    except Exception:
+    except subprocess.TimeoutExpired:
         try:
             if tmp.exists():
                 tmp.unlink()
         except Exception:
             pass
-        return input_path
+        raise RuntimeError(
+            f"ffmpeg accelerate timed out after {_ffmpeg_timeout(input_path)}s on {input_path}"
+        )
 
 
 def split_audio_for_transcription(

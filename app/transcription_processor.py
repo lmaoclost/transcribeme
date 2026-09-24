@@ -60,6 +60,18 @@ def transcribe_video(self, job_id: str) -> None:
 
         try:
             audio_path = Path(job.download_path)
+            # fail-fast: a missing file here means the stored path is stale
+            # (deleted fragment, cleaned tmp) — whisper can never succeed
+            if not audio_path.exists():
+                msg = f"download_path does not exist on disk: {audio_path}"
+                logger.error("Transcription failed for %s: %s", job_id, msg)
+                update_job_status(session, job, JobStatus.failed, error=msg)
+                add_job_event(session, job.id, "failed", msg)
+                session.commit()
+                if job.batch_id:
+                    update_batch_status(session, job.batch_id)
+                    session.commit()
+                return
             # Global acceleration 1.5x (applies to all lengths) — atempo pitch-preserving
             factor = float(settings.transcription_speed) if settings.transcription_speed else 1.5
             if factor not in (1.0, 1.5):
