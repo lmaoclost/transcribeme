@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -111,8 +112,8 @@ def _create_output_dir(uploader: str) -> Path:
     return target
 
 
-@celery_app.task(name="app.download_processor.enqueue_url")
-def enqueue_url(batch_id: str, url: str, requested_format: Optional[str] = None, job_id: Optional[str] = None) -> None:
+@celery_app.task(bind=True, name="app.download_processor.enqueue_url")
+def enqueue_url(self, batch_id: str, url: str, requested_format: Optional[str] = None, job_id: Optional[str] = None) -> None:
     """Resolve a URL into one or more jobs and enqueue downloads. Supports YouTube + direct media URLs. Optimistic job_id reused if provided."""
     logger.info("Enqueueing URL %s (optimistic job %s)", url, job_id)
     # Direct media URL: skip yt-dlp info
@@ -196,7 +197,6 @@ def enqueue_url(batch_id: str, url: str, requested_format: Optional[str] = None,
             if _s.youtube_prefer_captions:
                 try:
                     from app.services.youtube_captions import fetch_youtube_transcript
-                    from app.services.translation import translate as translate_to_pt_br
 
                     cap = fetch_youtube_transcript(url, target_lang=_s.translation_target_lang_code)
                     if cap:
@@ -208,7 +208,6 @@ def enqueue_url(batch_id: str, url: str, requested_format: Optional[str] = None,
                         prefix_map = {"por": "pt", "eng": "en", "spa": "es", "fra": "fr", "deu": "de"}
                         tgt_as_short = prefix_map.get(tgt_code.split("_")[0].lower()[:3], tgt_short)
                         needs_tr = not (src_short and src_short == tgt_as_short)
-                        pt_text = translate_to_pt_br(raw_text, cap_lang, tgt_code) if needs_tr else raw_text
                         # reuse optimistic job if provided
                         if job_id:
                             job = session.get(Job, job_id)
@@ -227,21 +226,54 @@ def enqueue_url(batch_id: str, url: str, requested_format: Optional[str] = None,
                             job = create_job(session, source_url=url, batch_id=batch_id, video_url=url, video_id=video_id, title=title, uploader=uploader, requested_format=requested_format, input_type="url")
                             job.source_lang = cap_lang
                             session.add(job)
-                        # write plain transcript (no timestamps) like .mp4 path
+                        # write raw captions; translation runs on the ML worker
+                        # (slim worker has no transformers)
                         safe_title = "".join(c for c in (title or video_id or job.id) if c.isalnum() or c in " -_")[:50].strip() or video_id or job.id
                         transcript_path = str(output_dir / f"{safe_title}-{video_id or job.id[:8]}.captions.txt")
-                        Path(transcript_path).write_text(pt_text, encoding="utf-8")
+                        if needs_tr:
+                            Path(transcript_path).write_text(raw_text, encoding="utf-8")
+                            update_job_status(session, job, JobStatus.transcribing, progress=85.0, transcript_path=transcript_path)
+                            add_job_event(session, job.id, "translating", f"Captions fetched lang={cap_lang}, translating on ML worker", 85.0)
+                            session.commit()
+                            translate_caption.apply_async(
+                                args=[job.id, transcript_path, cap_lang, tgt_code],
+                                queue="transcription_queue",
+                            )
+                            update_batch_status(session, batch_id)
+                            session.commit()
+                            logger.info("YouTube captions stored for %s lang=%s, translation deferred", url, cap_lang)
+                            return
+                        Path(transcript_path).write_text(raw_text, encoding="utf-8")
                         # versioning
                         tv = TranscriptVersion(job_id=job.id, version=1, transcript_path=transcript_path, model_name="caption", source_lang=cap_lang)
                         session.add(tv)
                         update_job_status(session, job, JobStatus.completed, progress=100.0, transcript_path=transcript_path)
-                        add_job_event(session, job.id, "completed", f"Captions fetched v1 lang={cap_lang}->{tgt_code}" if needs_tr else f"Captions fetched v1 lang={cap_lang}", 100.0)
+                        add_job_event(session, job.id, "completed", f"Captions fetched v1 lang={cap_lang}", 100.0)
                         session.commit()
                         update_batch_status(session, batch_id)
                         session.commit()
                         logger.info("YouTube captions used for %s lang=%s", url, cap_lang)
                         return
                 except Exception as e:
+                    from app.services.youtube_captions import RateLimitedError
+
+                    if isinstance(e, RateLimitedError) and self.request.retries < 3:
+                        countdown = 60 * (2**self.request.retries)
+                        logger.warning(
+                            "Caption fetch rate-limited for %s, retrying in %ss (attempt %s/3)",
+                            url,
+                            countdown,
+                            self.request.retries + 1,
+                        )
+                        add_job_event(
+                            session,
+                            job_id,
+                            "downloading",
+                            f"YouTube rate-limited captions, retrying in {countdown}s",
+                            0.0,
+                        )
+                        session.commit()
+                        raise self.retry(countdown=countdown, exc=e)
                     logger.warning("Caption fetch failed for %s, falling back to download: %s", url, e)
             if job_id:
                 job = session.get(Job, job_id)
@@ -281,6 +313,10 @@ def download_video(self, job_id: str, url: str, output_dir: str) -> None:
         session.commit()
 
         last_progress = 0.0
+        # yt-dlp fires status=finished PER STREAM (pre-merge fragments like
+        # ".f137.mp4"/".f251-2.webm"); the merger then deletes them and
+        # produces the final file. Only the final file is safe to store.
+        FRAGMENT_RE = re.compile(r"\.f\d+(?:-\d+)?(?:-part)?\.(?:mp4|webm|mkv|m4a|part)$")
 
         def progress_hook(data: Dict[str, Any]) -> None:
             nonlocal last_progress
@@ -298,7 +334,7 @@ def download_video(self, job_id: str, url: str, output_dir: str) -> None:
                         last_progress = overall
             elif data.get("status") == "finished":
                 filename = data.get("filename")
-                if filename:
+                if filename and not FRAGMENT_RE.search(filename):
                     update_job_status(
                         session,
                         job,
@@ -361,13 +397,17 @@ def download_video(self, job_id: str, url: str, output_dir: str) -> None:
                 session.commit()
             return
 
-        # yt-dlp skips re-download of existing files without firing the
-        # "finished" progress hook -> download_path stays None. Locate the
-        # file on disk so transcription can proceed.
+        # Post-download path resolution: the hook may have stored a pre-merge
+        # fragment (merger deletes it) or a skipped re-download leaves None.
+        # Re-resolve against what's actually on disk.
         session.refresh(job)
-        if not job.download_path:
-            video_id = job.video_id or ""
-            media_exts = (".mp4", ".mp3", ".m4a", ".webm", ".mkv", ".wav", ".ogg", ".mov")
+        video_id = job.video_id or ""
+        media_exts = (".mp4", ".mp3", ".m4a", ".webm", ".mkv", ".wav", ".ogg", ".mov")
+
+        def _exists(p: str | None) -> bool:
+            return bool(p) and Path(p).exists()
+
+        if not _exists(job.download_path):
             candidates = (
                 [p for p in sorted(Path(output_dir).glob(f"*{video_id}*")) if p.suffix.lower() in media_exts]
                 if video_id
@@ -375,7 +415,7 @@ def download_video(self, job_id: str, url: str, output_dir: str) -> None:
             )
             if candidates:
                 update_job_status(session, job, JobStatus.downloaded, progress=50.0, download_path=str(candidates[0]))
-                add_job_event(session, job.id, "downloaded", "Download finished (already on disk)", 50.0)
+                add_job_event(session, job.id, "downloaded", "Download finished (resolved post-merge)", 50.0)
                 session.commit()
             else:
                 update_job_status(session, job, JobStatus.failed, error="Download finished but no file found")
@@ -389,3 +429,36 @@ def download_video(self, job_id: str, url: str, output_dir: str) -> None:
         from app.transcription_processor import transcribe_video
 
         transcribe_video.apply_async(args=[job.id], queue="transcription_queue")
+
+
+@celery_app.task(name="app.download_processor.translate_caption")
+def translate_caption(job_id: str, transcript_path: str, src_lang: str, tgt_code: str) -> None:
+    """Translate a captions transcript on the ML worker (NLLB). Finalizes the job."""
+    from app.services.translation import translate as translate_to_pt_br
+
+    logger.info("Translating captions for %s lang=%s -> %s", job_id, src_lang, tgt_code)
+    with db.SessionLocal() as session:
+        job = session.get(Job, job_id)
+        if not job:
+            logger.error("Job %s not found", job_id)
+            return
+        raw = Path(transcript_path).read_text(encoding="utf-8")
+        try:
+            pt_text = translate_to_pt_br(raw, src_lang, tgt_code)
+            Path(transcript_path).write_text(pt_text, encoding="utf-8")
+            tv = TranscriptVersion(job_id=job.id, version=1, transcript_path=transcript_path, model_name="caption", source_lang=src_lang)
+            session.add(tv)
+            update_job_status(session, job, JobStatus.completed, progress=100.0, transcript_path=transcript_path)
+            add_job_event(session, job.id, "completed", f"Captions translated v1 lang={src_lang}->{tgt_code}", 100.0)
+            session.commit()
+            update_batch_status(session, job.batch_id)
+            session.commit()
+            logger.info("Captions translation completed for %s", job_id)
+        except Exception as exc:
+            logger.error("Captions translation failed for %s: %s", job_id, exc)
+            update_job_status(session, job, JobStatus.failed, error=str(exc))
+            add_job_event(session, job.id, "failed", f"Captions translation failed: {exc}")
+            session.commit()
+            if job.batch_id:
+                update_batch_status(session, job.batch_id)
+                session.commit()

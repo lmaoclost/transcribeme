@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 import tempfile
 
@@ -94,6 +95,10 @@ def clean_vtt_text(raw: str) -> str:
 def _is_youtube_url(url: str) -> bool:
     return "youtube.com" in url or "youtu.be" in url
 
+
+class RateLimitedError(RuntimeError):
+    """YouTube rate-limited (429) the caption fetch on every language."""
+
 def fetch_youtube_transcript(
     url: str, langs: list[str] | None = None, target_lang: str | None = None
 ) -> tuple[str, str] | None:
@@ -120,6 +125,7 @@ def fetch_youtube_transcript(
         ordered.remove(yt_target)
         ordered.insert(0, yt_target)
     # Try langs one by one to avoid 429 from requesting many at once
+    saw_rate_limit = False
     for lang_try in ordered:
         tmpdir = Path(tempfile.mkdtemp(prefix="ytcap_"))
         ydl_params = {
@@ -150,7 +156,11 @@ def fetch_youtube_transcript(
                 if not cleaned:
                     continue
                 return cleaned, short
-        except Exception:
+        except Exception as exc:
+            msg = str(exc)
+            if "429" in msg or "Too Many Requests" in msg:
+                saw_rate_limit = True
+                time.sleep(10)
             continue
         finally:
             try:
@@ -159,4 +169,11 @@ def fetch_youtube_transcript(
                 tmpdir.rmdir()
             except Exception:
                 pass
+
+    # every lang failed with 429: the video likely HAS captions (yt-dlp
+    # started downloading the .vtt) — this is transient rate limiting, not
+    # absence. Signal the caller to retry later instead of falling back to
+    # a full video download.
+    if saw_rate_limit:
+        raise RateLimitedError("caption fetch rate-limited (429) on all languages")
     return None
