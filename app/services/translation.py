@@ -135,4 +135,22 @@ def translate(text: str, src_lang: Optional[str], tgt_code: Optional[str] = None
         outputs.append(decoded.strip())
     return " ".join(outputs).strip()
 
+
+def translate_segments(blocks: list[dict], src_lang: Optional[str], tgt_code: Optional[str] = None) -> list[dict]:
+    """Translate ~30s blocks preserving timestamps. Blocks may be longer than
+    the old 400-token chunk — each block is one generate call (a 30s block is
+    ~75-120 words, far below the 512-token cap)."""
+    s = get_settings()
+    tgt = tgt_code or s.translation_target_lang_code
+    if not needs_translation(src_lang):
+        return blocks
+    translated: list[dict] = []
+    for block in blocks:
+        text = block["text"]
+        if not text.strip():
+            translated.append({**block, "text": text})
+            continue
+        translated.append({**block, "text": translate(text, src_lang, tgt)})
+    return translated
+
 # For testing without loading heavy model, allow mocking _lazy_load

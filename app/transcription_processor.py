@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from app.services.jobs import add_job_event, update_batch_status, update_job_sta
 from app.whisper_transcriber import WhisperTranscriber
 from app.models import TranscriptVersion
 from app.audio_tools import accelerate_audio, split_audio_for_transcription
-from app.services.translation import translate as translate_to_pt_br
+from app.services.translation import translate_segments
 
 logger = get_task_logger(__name__)
 
@@ -88,21 +89,21 @@ def transcribe_video(self, job_id: str) -> None:
                 transcribe_path = audio_path
 
             # Transcribe (auto-detect lang), then translate to pt-BR if needed via NLLB
-            def _do_transcribe(p: Path) -> tuple[str, str | None]:
-                txt, lng = self.transcriber.transcribe_audio(p)
-                return txt, lng
+            def _do_transcribe_blocks(p: Path) -> tuple[list[dict], str | None]:
+                blocks, lng = self.transcriber.transcribe_audio_segments(p)
+                return blocks, lng
 
             if WhisperTranscriber.needs_splitting(transcribe_path, settings.splitter_threshold_minutes):
                 chunks = split_audio_for_transcription(transcribe_path, settings.splitter_chunk_minutes)
-                raw_texts = []
+                raw_blocks: list[dict] = []
                 detected_lang = None
                 total = len(chunks)
                 mid = total // 2 if total > 1 else 0
                 for idx, chunk in enumerate(chunks):
-                    t, lang = _do_transcribe(chunk)
-                    raw_texts.append(t)
-                    if lang and not detected_lang:
-                        detected_lang = lang
+                    blocks, lng = _do_transcribe_blocks(chunk)
+                    raw_blocks.extend(blocks)
+                    if lng and not detected_lang:
+                        detected_lang = lng
                     # fewer: commit only at midpoint
                     if total > 1 and idx + 1 == mid:
                         pct = 60 + (mid / total) * 25  # 60->85 midpoint
@@ -116,10 +117,11 @@ def transcribe_video(self, job_id: str) -> None:
                             chunk.unlink()
                         except Exception:
                             pass
-                raw_transcription = "\n".join(raw_texts)
+                raw_transcription = " ".join(b["text"] for b in raw_blocks).strip()
                 lang = detected_lang
             else:
-                raw_transcription, lang = _do_transcribe(transcribe_path)
+                raw_blocks, lang = _do_transcribe_blocks(transcribe_path)
+                raw_transcription = " ".join(b["text"] for b in raw_blocks).strip()
 
             # cleanup accelerated temp (if not already cleaned as chunk source)
             if acc_base is not None and acc_base != audio_path and acc_base.exists():
@@ -137,11 +139,13 @@ def transcribe_video(self, job_id: str) -> None:
             tgt_as_short = prefix_map.get(tgt_code.split("_")[0].lower()[:3], tgt_short)
             needs_tr = not (src_short and src_short == tgt_as_short)
             if needs_tr:
-                logger.info("Translating %s -> %s via NLLB", lang, tgt_code)
+                logger.info("Translating %s -> %s via NLLB (block-wise)", lang, tgt_code)
                 add_job_event(session, job.id, "translating", f"Translating {lang} -> {tgt_code}", 85.0)
                 session.commit()
-                transcription = translate_to_pt_br(raw_transcription, lang, tgt_code)
+                blocks = translate_segments(raw_blocks, lang, tgt_code)
+                transcription = " ".join(b["text"] for b in blocks).strip()
             else:
+                blocks = raw_blocks
                 transcription = raw_transcription
                 logger.info("Source is target (%s), skipping translation", lang)
 
@@ -157,6 +161,16 @@ def transcribe_video(self, job_id: str) -> None:
                 transcript_path = f"{job.download_path}.v{version}.txt"
             with open(transcript_path, "w", encoding="utf-8") as handle:
                 handle.write(transcription)
+            # timed blocks sidecar (same stem, .segments.json) for the
+            # timestamp-aware transcript endpoint + topic-distill
+            try:
+                # sidecar sits next to the exact transcript file: video.txt.v2 ->
+                # video.txt.v2.segments.json (with_suffix would strip the .v2)
+                _tp = Path(transcript_path)
+                segments_path = str(_tp.with_name(_tp.name + ".segments.json"))
+                Path(segments_path).write_text(json.dumps(blocks, ensure_ascii=False), encoding="utf-8")
+            except Exception as exc:
+                logger.warning("segments sidecar write failed for %s: %s", job_id, exc)
 
             # store version
             tv = TranscriptVersion(

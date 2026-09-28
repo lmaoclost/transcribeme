@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -196,11 +197,11 @@ def enqueue_url(self, batch_id: str, url: str, requested_format: Optional[str] =
             _s = get_settings()
             if _s.youtube_prefer_captions:
                 try:
-                    from app.services.youtube_captions import fetch_youtube_transcript
+                    from app.services.youtube_captions import fetch_youtube_transcript_segments
 
-                    cap = fetch_youtube_transcript(url, target_lang=_s.translation_target_lang_code)
+                    cap = fetch_youtube_transcript_segments(url, target_lang=_s.translation_target_lang_code)
                     if cap:
-                        raw_text, cap_lang = cap
+                        raw_text, cap_lang, raw_segments = cap
                         tgt_code = _s.translation_target_lang_code
                         # decide skip if src matches target
                         src_short = (cap_lang or "").lower()[:2]
@@ -230,8 +231,10 @@ def enqueue_url(self, batch_id: str, url: str, requested_format: Optional[str] =
                         # (slim worker has no transformers)
                         safe_title = "".join(c for c in (title or video_id or job.id) if c.isalnum() or c in " -_")[:50].strip() or video_id or job.id
                         transcript_path = str(output_dir / f"{safe_title}-{video_id or job.id[:8]}.captions.txt")
+                        segments_path = str(Path(transcript_path).with_name(Path(transcript_path).name + ".segments.json"))
                         if needs_tr:
                             Path(transcript_path).write_text(raw_text, encoding="utf-8")
+                            Path(segments_path).write_text(json.dumps(raw_segments, ensure_ascii=False), encoding="utf-8")
                             update_job_status(session, job, JobStatus.transcribing, progress=85.0, transcript_path=transcript_path)
                             add_job_event(session, job.id, "translating", f"Captions fetched lang={cap_lang}, translating on ML worker", 85.0)
                             session.commit()
@@ -244,6 +247,7 @@ def enqueue_url(self, batch_id: str, url: str, requested_format: Optional[str] =
                             logger.info("YouTube captions stored for %s lang=%s, translation deferred", url, cap_lang)
                             return
                         Path(transcript_path).write_text(raw_text, encoding="utf-8")
+                        Path(segments_path).write_text(json.dumps(raw_segments, ensure_ascii=False), encoding="utf-8")
                         # versioning
                         tv = TranscriptVersion(job_id=job.id, version=1, transcript_path=transcript_path, model_name="caption", source_lang=cap_lang)
                         session.add(tv)
@@ -433,10 +437,11 @@ def download_video(self, job_id: str, url: str, output_dir: str) -> None:
 
 @celery_app.task(name="app.download_processor.translate_caption")
 def translate_caption(job_id: str, transcript_path: str, src_lang: str, tgt_code: str) -> None:
-    """Translate a captions transcript on the ML worker (NLLB). Finalizes the job."""
-    from app.services.translation import translate as translate_to_pt_br
+    """Translate a captions transcript (block-wise) on the ML worker. Finalizes the job."""
+    from app.services.translation import translate_segments
 
     logger.info("Translating captions for %s lang=%s -> %s", job_id, src_lang, tgt_code)
+    segments_path = str(Path(transcript_path).with_name(Path(transcript_path).name + ".segments.json"))
     with db.SessionLocal() as session:
         job = session.get(Job, job_id)
         if not job:
@@ -444,7 +449,17 @@ def translate_caption(job_id: str, transcript_path: str, src_lang: str, tgt_code
             return
         raw = Path(transcript_path).read_text(encoding="utf-8")
         try:
-            pt_text = translate_to_pt_br(raw, src_lang, tgt_code)
+            blocks: list[dict]
+            if Path(segments_path).exists():
+                blocks = json.loads(Path(segments_path).read_text(encoding="utf-8"))
+                blocks = translate_segments(blocks, src_lang, tgt_code)
+                pt_text = " ".join(b["text"] for b in blocks).strip()
+                Path(segments_path).write_text(json.dumps(blocks, ensure_ascii=False), encoding="utf-8")
+            else:
+                # legacy sidecar-less transcript: plain-text translation
+                from app.services.translation import translate as translate_to_pt_br
+
+                pt_text = translate_to_pt_br(raw, src_lang, tgt_code)
             Path(transcript_path).write_text(pt_text, encoding="utf-8")
             tv = TranscriptVersion(job_id=job.id, version=1, transcript_path=transcript_path, model_name="caption", source_lang=src_lang)
             session.add(tv)

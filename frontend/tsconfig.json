@@ -7,7 +7,8 @@
       "ES2020"
     ],
     "types": [
-      "vitest/globals"
+      "vitest/globals",
+      "@testing-library/jest-dom"
     ],
     "allowJs": false,
     "skipLibCheck": true,

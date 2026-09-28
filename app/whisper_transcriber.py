@@ -53,14 +53,27 @@ class WhisperTranscriber:
 
     def transcribe_audio(self, audio_file: Path) -> tuple[str, str | None]:
         """Transcribe audio, auto-detect language. Returns (text, lang)."""
+        segments, lang = self.transcribe_audio_segments(audio_file)
+        return " ".join(s["text"] for s in segments).strip(), lang
+
+    def transcribe_audio_segments(self, audio_file: Path) -> tuple[list[dict], str | None]:
+        """Transcribe audio returning timed blocks (~30s) + detected lang.
+
+        Returns ([{'start': 'MM:SS', 'end': 'MM:SS', 'text': ...}], lang).
+        faster-whisper yields per-utterance segments (start/end in seconds);
+        consecutive ones are merged into ~30s blocks for stable anchoring.
+        """
         start_time = time.time()
         segments, info = self.model.transcribe(str(audio_file), language=None)
         lang = getattr(info, "language", None) if info else None
         prob = getattr(info, "language_probability", None) if info else None
-        transcription_text = "".join(segment.text for segment in segments).strip()
+        cues = [(float(s.start), float(s.end), s.text.strip()) for s in segments if s.text.strip()]
+        from app.services.youtube_captions import group_cues_into_blocks
+
+        blocks = group_cues_into_blocks(cues)
         elapsed_time = time.time() - start_time
-        print(f"Transcription completed in {elapsed_time:.2f}s lang={lang} prob={prob}")
-        return transcription_text, lang
+        print(f"Transcription completed in {elapsed_time:.2f}s lang={lang} prob={prob} blocks={len(blocks)}")
+        return blocks, lang
 
     @staticmethod
     def needs_splitting(audio_file: Path, threshold_minutes: int = 30) -> bool:

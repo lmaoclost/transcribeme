@@ -98,6 +98,15 @@ export async function fetchTranscriptVersion(jobId: string, version: number): Pr
   return response.text();
 }
 
+export type TranscriptSegment = { start: string; end: string; text: string };
+
+export async function fetchTranscriptSegments(jobId: string, version: number): Promise<TranscriptSegment[] | null> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/transcript/${version}/segments`);
+  if (response.status === 404) return null; // legacy transcript without sidecar
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
 export async function deleteTranscriptVersion(jobId: string, version: number): Promise<{ message: string }> {
   const response = await fetch(`${API_BASE}/jobs/${jobId}/transcript/${version}`, { method: "DELETE" });
   return handleResponse(response);

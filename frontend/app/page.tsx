@@ -6,6 +6,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 
 import { JobCard } from "@/components/JobCard";
 import { JobTimeline } from "@/components/JobTimeline";
+import { TranscriptPane } from "@/components/TranscriptPane";
 import {
   createJobs,
   deleteJob,
@@ -14,6 +15,7 @@ import {
   fetchSettings,
   updateSettings,
   fetchTranscript,
+  fetchTranscriptSegments,
   fetchTranscripts,
   deleteTranscriptVersion,
   rerunJob,
@@ -98,6 +100,7 @@ export default function HomePage(){
   const selectedJob = jobs.find(j=>j.id===selectedJobId) ?? jobs[0];
   const { data: events } = useSWR(selectedJob?.id?["events",selectedJob.id]:null, ()=>fetchJobEvents(selectedJob!.id), { refreshInterval: REFRESH_INTERVAL });
   const { data: transcript, error: transcriptError, isLoading: transcriptLoading } = useSWR(selectedJob?.transcript_path?["transcript",selectedJob.id]:null, ()=>fetchTranscript(selectedJob!.id), { refreshInterval: selectedJob?.status==="completed"?0:REFRESH_INTERVAL });
+  const { data: transcriptSegments } = useSWR(selectedJob?.transcript_path?["transcript-segments",selectedJob.id]:null, ()=>fetchTranscriptSegments(selectedJob!.id, 1), { refreshInterval: selectedJob?.status==="completed"?0:REFRESH_INTERVAL });
 
   useEffect(()=>{
     if(settings){
@@ -240,7 +243,7 @@ export default function HomePage(){
                     <div className="spool-header"><span>SPOOL</span><span>{selectedJob.source_lang?`${selectedJob.source_lang}→${optLang.split("_")[0]}`:optLang.split("_")[0]} · {selectedJob.progress>=100?"READY":"…"}</span></div>
                     {transcriptLoading&&<p style={{fontSize:12, color:"var(--paper-muted)"}}>Loading…</p>}
                     {transcriptError&&<p style={{fontSize:12, color:"#7a1b12"}}>Not available yet</p>}
-                    {transcript?<pre className="transcript-viewer">{transcript}</pre>:(!transcriptLoading&&!transcriptError&&<div className="media-empty" style={{color:"var(--paper-muted)", borderColor:"rgba(0,0,0,0.1)"}}>No transcript yet</div>)}
+                    {transcript?<TranscriptPane text={transcript} segments={transcriptSegments??null} mediaUrl={mediaUrl}/>:(!transcriptLoading&&!transcriptError&&<div className="media-empty" style={{color:"var(--paper-muted)", borderColor:"rgba(0,0,0,0.1)"}}>No transcript yet</div>)}
                   </div>
                 </div>
                 <div><h4 style={{fontSize:12, margin:"0 0 8px"}}>Timeline</h4><JobTimeline events={events??[]} /></div>

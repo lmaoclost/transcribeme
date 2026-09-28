@@ -195,6 +195,29 @@ def get_transcript_version(job_id: str, version: int, session: Session = Depends
     return PlainTextResponse(path.read_text(encoding="utf-8", errors="ignore"))
 
 
+def _segments_sidecar_path(transcript_path: str):
+    """Sidecar sits next to the exact transcript file: `video.txt.v2` -> `video.txt.v2.segments.json`."""
+    return Path(str(transcript_path) + ".segments.json")
+
+
+@router.get("/jobs/{job_id}/transcript/{version}/segments")
+def get_transcript_segments(job_id: str, version: int, session: Session = Depends(get_session)):
+    """Timed blocks (~30s) sidecar: [{'start','end','text'},...]. 404 for legacy transcripts."""
+    import json as _json
+
+    tv = session.scalar(select(TranscriptVersion).where(TranscriptVersion.job_id == job_id, TranscriptVersion.version == version))
+    if not tv:
+        raise HTTPException(status_code=404, detail="Version not found")
+    path = _resolve_download_path(tv.transcript_path)
+    sidecar = _segments_sidecar_path(str(path))
+    if not sidecar.exists():
+        raise HTTPException(status_code=404, detail="segments not available for this transcript")
+    try:
+        return _json.loads(sidecar.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"invalid segments file: {e}")
+
+
 @router.delete("/jobs/{job_id}/transcript/{version}")
 def delete_transcript_version(job_id: str, version: int, session: Session = Depends(get_session)) -> dict:
     tv = session.scalar(select(TranscriptVersion).where(TranscriptVersion.job_id == job_id, TranscriptVersion.version == version))

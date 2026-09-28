@@ -92,6 +92,117 @@ def clean_vtt_text(raw: str) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
+
+CUE_RE = re.compile(r"^\s*(\d{2}:\d{2}:\d{2})\.(\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2})\.(\d{3})", re.MULTILINE)
+
+
+def _ts_to_sec(hh: str, mm: str = "00", ss: str = "00") -> float:
+    return int(hh) * 3600 + int(mm) * 60 + int(ss)
+
+
+def _fmt_ts(seconds: float) -> str:
+    seconds = int(seconds)
+    return f"{seconds // 60:02d}:{seconds % 60:02d}"
+
+
+def parse_vtt_cues(raw: str) -> list[tuple[float, float, str]]:
+    """Extract (start_sec, end_sec, cleaned_text) per VTT cue, noise stripped.
+
+    Text cleaning mirrors clean_vtt_text rules (headers, numeric seq, bracketed
+    noise, inline tags, speaker prefixes, HTML entities, dedup).
+    """
+    cues: list[tuple[float, float, str]] = []
+    cur_start = cur_end = None
+    cur_lines: list[str] = []
+    seen: set[str] = set()
+
+    def _flush() -> None:
+        nonlocal cur_start, cur_end, cur_lines
+        if cur_start is None:
+            return
+        text = re.sub(r"\s+", " ", " ".join(cur_lines)).strip()
+        if text:
+            cues.append((cur_start, cur_end or cur_start, text))
+        cur_start = cur_end = None
+        cur_lines = []
+
+    for line in raw.splitlines():
+        s = line.strip()
+        m = re.match(r"^(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})", s)
+        if m:
+            _flush()
+            cur_start = _ts_to_sec(m.group(1), m.group(2), m.group(3))
+            cur_end = _ts_to_sec(m.group(5), m.group(6), m.group(7))
+            continue
+        if cur_start is None:
+            continue  # header region before first cue
+        if not s or s in WEBVTT_HEADERS or s.startswith("Kind:") or s.startswith("Language:") or NUMERIC_RE.match(s):
+            continue
+        if BRACKET_MUSIC_RE.match(s):
+            continue
+        s = s.replace("&gt;", ">").replace("&lt;", "<").replace("&amp;", "&")
+        s = re.sub(r"<[^>]+>", "", s)
+        s = re.sub(r"\s*>>\s*", " ", s)
+        s = SPEAKER_RE.sub("", s)
+        s = SPEAKER2_RE.sub("", s)
+        s = re.sub(r"\[.*?music.*?\]", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"\[.*?música.*?\]", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"\[.*?applause.*?\]", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"\[.*?risos.*?\]", "", s, flags=re.IGNORECASE)
+        s = s.strip()
+        if not s:
+            continue
+        if s in seen and cur_lines and cur_lines[-1] == s:
+            continue
+        seen.add(s)
+        cur_lines.append(s)
+    _flush()
+    return cues
+
+
+def group_cues_into_blocks(
+    cues: list[tuple[float, float, str]], target_seconds: float = 30.0, max_seconds: float = 35.0
+) -> list[dict]:
+    """Merge consecutive cues into ~target_seconds blocks (never > max_seconds,
+    except a lone cue longer than max_seconds which is kept whole)."""
+    blocks: list[dict] = []
+    start = end = None
+    texts: list[str] = []
+    for c_start, c_end, text in cues:
+        if start is None:
+            start, end, texts = c_start, c_end, [text]
+            continue
+        if c_end - start > max_seconds and texts:
+            blocks.append({"start": _fmt_ts(start), "end": _fmt_ts(end), "text": " ".join(texts)})
+            start, end, texts = c_start, c_end, [text]
+        else:
+            end = c_end
+            texts.append(text)
+        if end - start >= target_seconds:
+            blocks.append({"start": _fmt_ts(start), "end": _fmt_ts(end), "text": " ".join(texts)})
+            start = end = None
+            texts = []
+    if start is not None and texts:
+        blocks.append({"start": _fmt_ts(start), "end": _fmt_ts(end), "text": " ".join(texts)})
+    # a lone cue may exceed max_seconds (nothing to split into); split it in half
+    fixed: list[dict] = []
+    for b in blocks:
+        m1, m2 = int(b["start"][:2]) * 60 + int(b["start"][3:]), int(b["end"][:2]) * 60 + int(b["end"][3:])
+        if m2 - m1 > max_seconds:
+            mid = (m1 + m2) // 2
+            words = b["text"].split()
+            half = len(words) // 2 or 1
+            fixed.append({"start": b["start"], "end": _fmt_ts(mid), "text": " ".join(words[:half])})
+            fixed.append({"start": _fmt_ts(mid), "end": b["end"], "text": " ".join(words[half:])})
+        else:
+            fixed.append(b)
+    return fixed
+
+
+def clean_vtt_segments(raw: str) -> list[dict]:
+    """VTT -> [{'start': 'MM:SS', 'end': 'MM:SS', 'text': ...}, ...] (~30s blocks)."""
+    return group_cues_into_blocks(parse_vtt_cues(raw))
+
 def _is_youtube_url(url: str) -> bool:
     return "youtube.com" in url or "youtu.be" in url
 
@@ -102,7 +213,18 @@ class RateLimitedError(RuntimeError):
 def fetch_youtube_transcript(
     url: str, langs: list[str] | None = None, target_lang: str | None = None
 ) -> tuple[str, str] | None:
-    """Try to download captions. Returns (clean_text, detected_lang) or None if no caption.
+    """Download captions; returns (clean_text, detected_lang) or None."""
+    result = fetch_youtube_transcript_segments(url, langs, target_lang)
+    if result is None:
+        return None
+    cleaned, short, _segments = result
+    return cleaned, short
+
+
+def fetch_youtube_transcript_segments(
+    url: str, langs: list[str] | None = None, target_lang: str | None = None
+) -> tuple[str, str, list[dict]] | None:
+    """Download captions; returns (clean_text, detected_lang, timed_blocks) or None.
 
     The target output language goes first: native target captions (official,
     else auto — yt-dlp already prefers official per lang) win over any other
@@ -155,7 +277,7 @@ def fetch_youtube_transcript(
                 cleaned = clean_vtt_text(raw)
                 if not cleaned:
                     continue
-                return cleaned, short
+                return cleaned, short, clean_vtt_segments(raw)
         except Exception as exc:
             msg = str(exc)
             if "429" in msg or "Too Many Requests" in msg:
